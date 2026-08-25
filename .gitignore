@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+results.json
+data/catalog.jsonl
+data/releases/
+organizer/
+secure/
+docs/audits/
+docs/data_selection_audit.md
+docs/participant_release_checklist.md
+tests/test_5core_builder.py
+tests/test_organizer_pipeline.py
+*.log
