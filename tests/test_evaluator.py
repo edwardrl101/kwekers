@@ -80,6 +80,12 @@ class EvaluatorTest(unittest.TestCase):
             result = evaluate(EchoTargetAgent(), samples, catalog_ids, categories, products)
             self.assertEqual(result["hit_rate_at_10"], 1.0)
 
+    def test_evaluate_handles_empty_sample_list(self) -> None:
+        result = evaluate(EchoTargetAgent(), [], set(), {}, {})
+        self.assertEqual(result["sample_count"], 0)
+        self.assertEqual(result["mttc"], None)
+        self.assertEqual(result["efficiency"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -109,6 +109,7 @@ class ConversationState:
         self.candidate_count = len(recommendations)
 
     def begin_new_goal(self, user_message: str, intent: Intent = Intent.UNCERTAIN) -> None:
+        """Reset active constraints for an override before the new turn is recorded."""
         self.intent = intent
         self.current_search_goal = user_message
         self.constraints.clear_for_new_goal()

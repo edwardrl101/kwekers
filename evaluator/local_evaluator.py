@@ -276,7 +276,8 @@ def evaluate(
         })
 
     overall = metric_summary(sessions)
-    efficiency = max(0.0, min(1.0, (11.0 - float(overall["mttc"])) / 10.0))
+    overall_mttc = overall["mttc"]
+    efficiency = 0.0 if overall_mttc is None else max(0.0, min(1.0, (11.0 - float(overall_mttc)) / 10.0))
     technical_score = 0.50 * overall["hit_rate_at_10"] + 0.30 * overall["mrr"] + 0.20 * efficiency
     grouped: dict[str, list[dict]] = defaultdict(list)
     for session in sessions:
