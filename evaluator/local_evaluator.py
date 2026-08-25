@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Participant Kit evaluator with a small repository-specific hardening patch.
 
 Most of this module mirrors the official Participant Kit evaluator. The only
 repository-authored behavior change is the empty-session guard in
 ``metric_summary``.
 """
+
+from __future__ import annotations
 
 import argparse
 import json

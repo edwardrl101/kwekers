@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Participant Kit BM25 starter with repository-specific typed state wiring.
 
 The retrieval/indexing baseline mirrors the official Participant Kit starter.
 The repository-authored additions are the ``ConversationState`` session store
 and the turn/response recording calls marked inline below.
 """
+
+from __future__ import annotations
 
 import json
 import re
