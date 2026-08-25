@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Repository addition: typed conversation state scaffold for the starter agent."""
+
 from dataclasses import dataclass, field
 from enum import Enum
 

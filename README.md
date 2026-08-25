@@ -1,5 +1,7 @@
 # TechJam Conversational E-Commerce Search Challenge
 
+> Provenance note: unless a section is explicitly labeled as a repository addition, this README mirrors the Participant Kit material added in the bootstrap commit.
+
 Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
 
 ## What You Receive
@@ -45,7 +47,7 @@ python3 -m scripts.evaluate
 Edit `starter/agent.py` to implement your system. Do not edit the evaluator or public labels when reporting your local score.
 The command writes per-session results and aggregate metrics to `results.json`.
 
-## Bootstrap Architecture Status
+## Repository Addition: Bootstrap Architecture Status
 
 This repository currently boots a minimal vertical slice:
 

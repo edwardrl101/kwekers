@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Participant Kit evaluator with a small repository-specific hardening patch.
+
+Most of this module mirrors the official Participant Kit evaluator. The only
+repository-authored behavior change is the empty-session guard in
+``metric_summary``.
+"""
+
 import argparse
 import json
 import random
@@ -186,6 +193,8 @@ def customer_reply(sample: dict, ask_attribute: object, disclosed: set[str], bou
 
 
 def metric_summary(sessions: list[dict]) -> dict:
+    # Repository addition: keep aggregate metric computation well-defined when
+    # the evaluator is invoked with zero samples.
     if not sessions:
         return {"sample_count": 0, "hit_rate_at_10": 0.0, "mrr": 0.0, "mttc": None}
     hit_rate = sum(int(item["hit"]) for item in sessions) / len(sessions)

@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Participant Kit BM25 starter with repository-specific typed state wiring.
+
+The retrieval/indexing baseline mirrors the official Participant Kit starter.
+The repository-authored additions are the ``ConversationState`` session store
+and the turn/response recording calls marked inline below.
+"""
+
 import json
 import re
 import sqlite3
@@ -40,6 +47,8 @@ class Agent:
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.catalog_path = Path(catalog_path)
         self.connection = sqlite3.connect(":memory:")
+        # Repository addition: track structured per-session state instead of
+        # only remembering which session ids have been reset.
         self._sessions: dict[str, ConversationState] = {}
         self._build_index()
 
@@ -86,6 +95,8 @@ class Agent:
         state = self._sessions.get(session_id)
         if state is None:
             raise RuntimeError("reset must be called before respond")
+        # Repository addition: persist the user turn before retrieval so future
+        # policies can inspect structured session history.
         state.record_user_turn(turn, user_message)
         unique_terms = list(dict.fromkeys(_terms(user_message)))[:40]
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
@@ -104,6 +115,7 @@ class Agent:
             "recommendations": recommendations,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }
+        # Repository addition: persist the emitted response alongside the turn.
         state.record_agent_response(
             response["message"],
             response["ask_attribute"],
