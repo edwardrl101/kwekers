@@ -18,3 +18,4 @@ tests/test_organizer_pipeline.py
 *.log
 CLAUDE.md
 data/dense_cache.npz
+catalog.jsonl.gz
