@@ -82,11 +82,12 @@ if __name__ == "__main__":
 
     # Run quick benchmark over Buying sessions in public set
     if public_path.exists():
-        buying_sessions = [
-            json.loads(line)
-            for line in public_path.open(encoding="utf-8")
-            if json.loads(line).get("scenario_type") == "buying"
-        ]
+        buying_sessions = []
+        with public_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                row = json.loads(line)
+                if row.get("scenario_type") == "buying":
+                    buying_sessions.append(row)
         
         candidate_sizes = []
         hits = 0
