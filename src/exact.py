@@ -22,7 +22,9 @@ class ExactRoute:
                 norm = clean_constraint(f)
                 if norm:
                     self.exact_index[norm].append(asin)
-                    self.exact_index[norm.lower()].append(asin)
+                    lowered = norm.lower()
+                    if lowered != norm:
+                        self.exact_index[lowered].append(asin)
 
             # 2. Index "Key: Value" detail pairs
             for k, v in (p.get("details") or {}).items():
