@@ -31,15 +31,18 @@ class ExactRoute:
                     self.exact_index[norm].append(asin)
                     self.exact_index[norm.lower()].append(asin)
 
-    def extract_constraint(self, message: str) -> str:
+    def extract_constraint(
+        self,
+        message: str,
+        _patterns=(
+            re.compile(r"\bA key requirement is:\s*(.+?)(?:\.\s*$|$)", re.I),
+            re.compile(r"\bWhat I need is:\s*(.+?)(?:\.\s*$|$)", re.I),
+            re.compile(r"\bFor that, what matters is:\s*(.+?)(?:\.\s*$|$)", re.I),
+        ),
+    ) -> str:
         """Extracts customer constraints following the simulator's exact message templates."""
-        patterns = [
-            r"A key requirement is:\s*(.+?)(?:\.\s*$|$)",
-            r"What I need is:\s*(.+?)(?:\.\s*$|$)",
-            r"For that, what matters is:\s*(.+?)(?:\.\s*$|$)",
-        ]
-        for pat in patterns:
-            match = re.search(pat, message, re.IGNORECASE)
+        for pat in _patterns:
+            match = pat.search(message)
             if match:
                 return clean_constraint(match.group(1))
         return clean_constraint(message)
