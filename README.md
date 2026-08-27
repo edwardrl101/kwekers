@@ -46,6 +46,21 @@ The command writes per-session results and aggregate metrics to `results.json`.
 The included weak BM25 starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
 MTTC `9.81` on the released public set. See `docs/baseline_results.json`.
 
+## Team Evaluation Workflow
+
+The committed `data/eval_split.json` defines a scenario-stratified 140-session
+tune split and a sealed 60-session holdout split. Use the tune split during
+development:
+
+```bash
+python scripts/eval.py --split tune
+```
+
+The command prints overall and per-scenario metrics, writes
+`results_tune.json`, and appends a timestamped measurement to `runs.csv`.
+Run `--split holdout` only for checkpoints, and use `--split all` when reporting
+a score explicitly measured on all 200 public sessions.
+
 ## Agent Interface
 
 ```python

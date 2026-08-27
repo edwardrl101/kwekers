@@ -1,78 +1,137 @@
 from __future__ import annotations
 
+import hashlib
 import json
-import re
-import sqlite3
+import random
 from pathlib import Path
+from typing import Callable
 
 
-TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
-STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
-    "i", "in", "is", "it", "me", "my", "of", "on", "or", "please", "some",
-    "that", "the", "this", "to", "want", "with", "would", "you", "looking",
-}
-
-
-def _text(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, dict):
-        return " ".join(f"{key} {item}" for key, item in value.items())
-    if isinstance(value, list):
-        return " ".join(str(item) for item in value)
-    return str(value)
-
-
-def _terms(text: str) -> list[str]:
-    return [
-        token.lower()
-        for token in TOKEN_RE.findall(text)
-        if len(token) > 1 and token.lower() not in STOPWORDS
-    ]
+RECOMMENDATION_COUNT = 10
+RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
 
 
 class Agent:
-    """Editable weak baseline: stateless BM25 retrieval with no LLM dependency."""
+    """Crash-safe Day 1 router with deterministic random fallback."""
 
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.catalog_path = Path(catalog_path)
-        self.connection = sqlite3.connect(":memory:")
-        self._sessions: set[str] = set()
-        self._build_index()
+        self._catalog_ids = self._load_catalog_ids()
+        self._catalog_id_set = set(self._catalog_ids)
+        self._sessions: dict[str, dict] = {}
 
-    def _build_index(self) -> None:
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "CREATE VIRTUAL TABLE products USING fts5("
-            "parent_asin UNINDEXED, title, categories, features, details, store, description, "
-            "tokenize='unicode61 remove_diacritics 2')"
-        )
-        batch: list[tuple[str, str, str, str, str, str, str]] = []
-        with self.catalog_path.open(encoding="utf-8") as handle:
-            for line in handle:
-                product = json.loads(line)
-                batch.append(
-                    (
-                        str(product["parent_asin"]),
-                        _text(product.get("title")),
-                        _text(product.get("categories")),
-                        _text(product.get("features")),
-                        _text(product.get("details")),
-                        _text(product.get("store")),
-                        _text(product.get("description")),
-                    )
-                )
-                if len(batch) >= 1000:
-                    cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
-                    batch.clear()
-        if batch:
-            cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
-        self.connection.commit()
+    def _load_catalog_ids(self) -> list[str]:
+        """Load unique IDs without allowing bad catalog data to crash Agent."""
+        identifiers: list[str] = []
+        seen: set[str] = set()
+        try:
+            with self.catalog_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        product = json.loads(line)
+                        parent_asin = str(product.get("parent_asin", "")).strip()
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                    if parent_asin and parent_asin not in seen:
+                        seen.add(parent_asin)
+                        identifiers.append(parent_asin)
+        except OSError:
+            return []
+        return identifiers
 
     def reset(self, session_id: str, user_profile: dict) -> None:
-        # The profile is anonymized and may be used for personalization.
-        self._sessions.add(session_id)
+        """Start fresh state for a session; malformed inputs remain harmless."""
+        try:
+            key = str(session_id)
+            safe_profile = user_profile if isinstance(user_profile, dict) else {}
+            encoded_profile = json.dumps(
+                safe_profile, sort_keys=True, separators=(",", ":"), default=str
+            ).encode("utf-8")
+            self._sessions[key] = {
+                "seed_key": hashlib.sha256(encoded_profile).hexdigest(),
+                "user_profile": safe_profile,
+            }
+        except Exception:
+            return None
+
+    # Uniform route contracts allow independent implementations and later
+    # parallel execution. All routes intentionally return no candidates today.
+    def _route_bucket(self, session: dict, user_message: str, turn: int) -> list[str]:
+        return []
+
+    def _route_exact(self, session: dict, user_message: str, turn: int) -> list[str]:
+        return []
+
+    def _route_bm25(self, session: dict, user_message: str, turn: int) -> list[str]:
+        return []
+
+    def _route_dense(self, session: dict, user_message: str, turn: int) -> list[str]:
+        return []
+
+    def _route_candidates(self, session: dict, user_message: str, turn: int) -> list[str]:
+        """Call every route and merge valid-looking IDs without duplicates."""
+        routes: tuple[Callable[[dict, str, int], list[str]], ...] = (
+            self._route_bucket,
+            self._route_exact,
+            self._route_bm25,
+            self._route_dense,
+        )
+        merged: list[str] = []
+        seen: set[str] = set()
+        for route in routes:
+            try:
+                candidates = route(session, user_message, turn)
+            except Exception:
+                candidates = []
+            if not isinstance(candidates, list):
+                continue
+            for value in candidates:
+                parent_asin = str(value).strip()
+                if parent_asin and parent_asin not in seen:
+                    seen.add(parent_asin)
+                    merged.append(parent_asin)
+        return merged
+
+    def _random_fill(self, candidates: list[str], session: dict, turn: int) -> list[str]:
+        """Pad route results to ten unique recommendations reproducibly."""
+        result: list[str] = []
+        seen: set[str] = set()
+        for parent_asin in candidates:
+            if parent_asin in self._catalog_id_set and parent_asin not in seen:
+                seen.add(parent_asin)
+                result.append(parent_asin)
+                if len(result) == RECOMMENDATION_COUNT:
+                    return result
+
+        seed_key = (
+            session.get("seed_key", "missing-session")
+            if isinstance(session, dict)
+            else "missing-session"
+        )
+        seed_text = f"{RANDOM_FILL_SEED}\0{seed_key}\0{turn}"
+        seed = int.from_bytes(hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big")
+        rng = random.Random(seed)
+        while (
+            len(result) < RECOMMENDATION_COUNT
+            and len(seen) < len(self._catalog_ids)
+        ):
+            parent_asin = self._catalog_ids[rng.randrange(len(self._catalog_ids))]
+            if parent_asin not in seen:
+                seen.add(parent_asin)
+                result.append(parent_asin)
+        if len(result) == RECOMMENDATION_COUNT:
+            return result
+
+        # The real catalog has 50,000 IDs. Placeholders preserve the response
+        # schema and exact length if that file is unavailable or too small.
+        placeholder_index = 0
+        while len(result) < RECOMMENDATION_COUNT:
+            placeholder = f"__missing_catalog_{placeholder_index}"
+            placeholder_index += 1
+            if placeholder not in seen:
+                seen.add(placeholder)
+                result.append(placeholder)
+        return result
 
     def respond(
         self,
@@ -81,22 +140,24 @@ class Agent:
         turn: int,
         top_k: int,
     ) -> dict:
-        if session_id not in self._sessions:
-            raise RuntimeError("reset must be called before respond")
-        unique_terms = list(dict.fromkeys(_terms(user_message)))[:40]
-        expression = " OR ".join(f'"{term}"' for term in unique_terms)
-        if not expression:
-            recommendations: list[dict] = []
-        else:
-            rows = self.connection.execute(
-                "SELECT parent_asin FROM products WHERE products MATCH ? "
-                "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
-                (expression, top_k),
-            ).fetchall()
-            recommendations = [{"parent_asin": str(row[0])} for row in rows]
+        """Return a valid response even if session state or a route is broken."""
+        try:
+            key = str(session_id)
+            session = self._sessions.get(
+                key, {"seed_key": "missing-session", "user_profile": {}}
+            )
+            safe_message = user_message if isinstance(user_message, str) else ""
+            safe_turn = turn if isinstance(turn, int) else 0
+            routed = self._route_candidates(session, safe_message, safe_turn)
+            parent_asins = self._random_fill(routed, session, safe_turn)
+        except Exception:
+            parent_asins = self._random_fill([], {"seed_key": "error"}, 0)
+
         return {
-            "message": "Here are the closest matches I found.",
-            "ask_attribute": None,
-            "recommendations": recommendations,
+            "message": "I am refining the shortlist. What else should I consider?",
+            "ask_attribute": "other",
+            "recommendations": [
+                {"parent_asin": parent_asin} for parent_asin in parent_asins
+            ],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }
