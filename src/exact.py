@@ -69,8 +69,7 @@ if __name__ == "__main__":
     public_path = Path("data/public_set.jsonl")
 
     if not catalog_path.exists():
-        print("data/catalog.jsonl not found. Please extract catalog.jsonl.gz first.")
-        exit(1)
+        raise SystemExit("data/catalog.jsonl not found. Please extract catalog.jsonl.gz first.")
 
     print("Loading catalog into exact index...")
     catalog = {
