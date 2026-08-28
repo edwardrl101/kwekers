@@ -296,6 +296,7 @@ class DenseRoute:
         cache: str | Path = "data/dense_cache.npz",
         model_name: str | None = None,
         device: str | None = None,
+        build_if_missing: bool = True,
     ) -> None:
         """device=None lets sentence-transformers choose (MPS on Apple Silicon).
 
@@ -306,7 +307,21 @@ class DenseRoute:
         import numpy as np
         from sentence_transformers import SentenceTransformer
 
-        self.model = SentenceTransformer(model_name or self.MODEL, device=device)
+        selected_model = model_name or self.MODEL
+        try:
+            # Prefer an already-downloaded model.  Without this flag,
+            # Hugging Face performs several online metadata checks even when
+            # every required file is cached, making offline startup spend
+            # minutes retrying unreachable URLs.
+            self.model = SentenceTransformer(
+                selected_model,
+                device=device,
+                local_files_only=True,
+            )
+        except OSError:
+            # First-time setup still works normally: if the model is absent
+            # locally, allow sentence-transformers to download it.
+            self.model = SentenceTransformer(selected_model, device=device)
         cache_path = Path(cache)
         asins = list(catalog.keys())
 
@@ -316,6 +331,11 @@ class DenseRoute:
                 self.asins = np.array(asins)
                 self.embeddings = self._sanitize(blob["embeddings"])
                 return
+
+        if not build_if_missing:
+            raise RuntimeError(
+                f"Dense cache is missing or does not match the catalog: {cache_path}"
+            )
 
         documents = [product_text(catalog[a], cap=512) for a in asins]
         raw = self.model.encode(
