@@ -57,7 +57,7 @@ python scripts/eval.py --split tune
 ```
 
 The command prints overall and per-scenario metrics, writes
-`results_tune.json`, and appends a timestamped measurement to `runs.csv`.
+`results_tune.json`, and appends a timestamped measurement to `runs/runs.csv` (override with `--runs`).
 Run `--split holdout` only for checkpoints, and use `--split all` when reporting
 a score explicitly measured on all 200 public sessions.
 
