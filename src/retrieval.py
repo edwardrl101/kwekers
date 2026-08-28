@@ -23,9 +23,6 @@ import sqlite3
 import unicodedata
 from pathlib import Path
 
-import numpy as np
-
-
 # ---------------------------------------------------------------- normalization
 
 _KEEP = re.compile(r"[^\w\s$%.,'-]", re.UNICODE)
@@ -260,6 +257,7 @@ class NgramRoute:
     """
 
     def __init__(self, catalog: dict[str, dict], max_features: int = 300_000) -> None:
+        import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer
 
         self.asins = np.array(list(catalog.keys()))
@@ -305,6 +303,7 @@ class DenseRoute:
         catalog, so MPS is safe here and roughly 2.5x faster. Pass device='cpu'
         if you ever need bit-reproducibility across machines.
         """
+        import numpy as np
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name or self.MODEL, device=device)
@@ -331,8 +330,9 @@ class DenseRoute:
                  embeddings=self.embeddings.astype(np.float16))
 
     @staticmethod
-    def _sanitize(matrix: np.ndarray) -> np.ndarray:
+    def _sanitize(matrix) -> "np.ndarray":
         """Zero out non-finite rows and re-normalize. Loud about damage."""
+        import numpy as np
         result = np.asarray(matrix, dtype=np.float32)
         bad = ~np.isfinite(result).all(axis=1)
         if bad.any():
@@ -344,6 +344,7 @@ class DenseRoute:
         return result / np.maximum(norms, 1e-8)
 
     def query(self, text: str, limit: int = 200) -> list[tuple[str, float]]:
+        import numpy as np
         cleaned = strip_boilerplate(text) or text
         vector = np.asarray(
             self.model.encode([cleaned], normalize_embeddings=True,
@@ -362,7 +363,8 @@ class DenseRoute:
 
 # -------------------------------------------------------------------- helpers
 
-def _top_k(asins: np.ndarray, scores: np.ndarray, limit: int) -> list[tuple[str, float]]:
+def _top_k(asins, scores, limit: int) -> list[tuple[str, float]]:
+    import numpy as np
     limit = min(limit, len(scores))
     if limit <= 0:
         return []

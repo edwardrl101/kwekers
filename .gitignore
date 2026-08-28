@@ -5,6 +5,7 @@ __pycache__/
 results.json
 scripts/
 data/split.json
+results_*.json
 data/catalog.jsonl
 data/releases/
 # Organizer-only code, private evaluation data, manifests, and build reports.
