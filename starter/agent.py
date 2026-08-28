@@ -8,6 +8,7 @@ from typing import Callable
 
 
 RECOMMENDATION_COUNT = 10
+ROUTE_CANDIDATE_LIMIT = 200
 RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
 
 
@@ -16,14 +17,19 @@ class Agent:
 
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.catalog_path = Path(catalog_path)
-        self._catalog_ids = self._load_catalog_ids()
+        self._catalog = self._load_catalog()
+        self._catalog_ids = list(self._catalog)
         self._catalog_id_set = set(self._catalog_ids)
         self._sessions: dict[str, dict] = {}
+        self._bucket_route = None
+        self._exact_route = None
+        self._bm25_route = None
+        self._dense_route = None
+        self._initialize_routes()
 
-    def _load_catalog_ids(self) -> list[str]:
-        """Load unique IDs without allowing bad catalog data to crash Agent."""
-        identifiers: list[str] = []
-        seen: set[str] = set()
+    def _load_catalog(self) -> dict[str, dict]:
+        """Load valid, uniquely identified products without crashing Agent."""
+        catalog: dict[str, dict] = {}
         try:
             with self.catalog_path.open(encoding="utf-8") as handle:
                 for line in handle:
@@ -32,12 +38,46 @@ class Agent:
                         parent_asin = str(product.get("parent_asin", "")).strip()
                     except (AttributeError, TypeError, ValueError):
                         continue
-                    if parent_asin and parent_asin not in seen:
-                        seen.add(parent_asin)
-                        identifiers.append(parent_asin)
+                    if parent_asin and parent_asin not in catalog:
+                        catalog[parent_asin] = product
         except OSError:
-            return []
-        return identifiers
+            return {}
+        return catalog
+
+    def _initialize_routes(self) -> None:
+        """Build each independent route, isolating optional dependency failures."""
+        if not self._catalog:
+            return
+
+        try:
+            from src.buckets import BucketRoute
+
+            self._bucket_route = BucketRoute(self._catalog)
+        except Exception:
+            self._bucket_route = None
+
+        try:
+            from src.exact import ExactRoute
+
+            self._exact_route = ExactRoute(self._catalog)
+        except Exception:
+            self._exact_route = None
+
+        try:
+            from src.retrieval import BM25Route
+
+            self._bm25_route = BM25Route(self._catalog)
+        except Exception:
+            self._bm25_route = None
+
+        try:
+            from src.retrieval import DenseRoute
+
+            self._dense_route = DenseRoute(self._catalog)
+        except Exception:
+            # Dense retrieval is optional at runtime: the model dependency or
+            # its offline cache may not be present in the judging environment.
+            self._dense_route = None
 
     def reset(self, session_id: str, user_profile: dict) -> None:
         """Start fresh state for a session; malformed inputs remain harmless."""
@@ -54,19 +94,32 @@ class Agent:
         except Exception:
             return None
 
-    # Uniform route contracts allow independent implementations and later
-    # parallel execution. All routes intentionally return no candidates today.
+    @staticmethod
+    def _query_route(route: object, user_message: str) -> list[str]:
+        """Adapt the common scored route output to the Agent's ID-only contract."""
+        if route is None:
+            return []
+        results = route.query(user_message, limit=ROUTE_CANDIDATE_LIMIT)
+        if not isinstance(results, list):
+            return []
+        candidates: list[str] = []
+        for result in results:
+            if not isinstance(result, (tuple, list)) or not result:
+                continue
+            candidates.append(str(result[0]))
+        return candidates
+
     def _route_bucket(self, session: dict, user_message: str, turn: int) -> list[str]:
-        return []
+        return self._query_route(self._bucket_route, user_message)
 
     def _route_exact(self, session: dict, user_message: str, turn: int) -> list[str]:
-        return []
+        return self._query_route(self._exact_route, user_message)
 
     def _route_bm25(self, session: dict, user_message: str, turn: int) -> list[str]:
-        return []
+        return self._query_route(self._bm25_route, user_message)
 
     def _route_dense(self, session: dict, user_message: str, turn: int) -> list[str]:
-        return []
+        return self._query_route(self._dense_route, user_message)
 
     def _route_candidates(self, session: dict, user_message: str, turn: int) -> list[str]:
         """Call every route and merge valid-looking IDs without duplicates."""

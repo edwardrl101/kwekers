@@ -57,6 +57,29 @@ class AgentShellTest(unittest.TestCase):
             second = agent.respond("second", "message", 2, 10)["recommendations"]
             self.assertEqual(first, second)
 
+    def test_route_adapters_delegate_and_discard_scores(self) -> None:
+        class FakeRoute:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, int]] = []
+
+            def query(self, text: str, limit: int) -> list[tuple[str, float]]:
+                self.calls.append((text, limit))
+                return [("A001", 0.9), ("A002", 0.5)]
+
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)))
+            route = FakeRoute()
+            for attribute, adapter in (
+                ("_bucket_route", agent._route_bucket),
+                ("_exact_route", agent._route_exact),
+                ("_bm25_route", agent._route_bm25),
+                ("_dense_route", agent._route_dense),
+            ):
+                setattr(agent, attribute, route)
+                self.assertEqual(adapter({}, "query", 1), ["A001", "A002"])
+
+            self.assertEqual(route.calls, [("query", 200)] * 4)
+
 
 if __name__ == "__main__":
     unittest.main()
