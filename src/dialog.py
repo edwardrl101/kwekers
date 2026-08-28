@@ -65,6 +65,15 @@ ALLOWED_ASK_ATTRIBUTES = (
     "other",
 )
 
+# Day-3 policy comparison names. Keep them stable so Agent and diagnostics agree.
+POLICY_ALWAYS_OTHER = "always_other"
+POLICY_OTHER_TWICE_ROTATE = "other_twice_rotate"
+QUESTION_POLICY_MODES = (POLICY_ALWAYS_OTHER, POLICY_OTHER_TWICE_ROTATE)
+
+# The evaluator's classifier can never produce brand/category. A valid policy
+# must therefore stay inside this set (plus ``other``).
+SAFE_ASK_ATTRIBUTES = frozenset((*USEFUL_CLASSIFIED_ATTRIBUTES, "other"))
+
 
 # Message-shape detection.
 KEY_REQUIREMENT_RE = re.compile(r"\bA key requirement is:\s*(.+?)(?:\.\s*$|$)", re.I)
@@ -402,6 +411,12 @@ def route_scenario(message: str, turn: int, current: str = "unknown") -> str:
     return current
 
 
+def is_override_message(message: str) -> bool:
+    """Return True when the current user message is the simulator's override event."""
+
+    return bool(OVERRIDE_RE.search(str(message or "")) or WHAT_I_NEED_RE.search(str(message or "")))
+
+
 def extract_constraints(message: str, scenario: str = "unknown", turn: int = 1) -> list[tuple[str, str]]:
     """Extract user-visible constraints from the simulator's message shapes.
 
@@ -440,43 +455,56 @@ def extract_constraints(message: str, scenario: str = "unknown", turn: int = 1) 
 
 
 class QuestionPolicy:
-    """Day-1 clarification policy.
+    """Evaluator-safe clarification policy with two measured Day-3 variants.
 
-    Public-set strategy:
-    1. Ask ``other`` until two constraint-bearing ``other`` replies have been
-       observed (boundary's first no-preference reply does not count), or until
-       ``other`` explicitly reports exhaustion.
-    2. Once the four-item card is effectively drained, still ask a non-null
-       attribute every turn.  If Day-2 candidate-pool information-gain scores
-       are supplied, choose the highest-scoring useful attribute; otherwise use
-       a deterministic robust fallback cycle.
+    ``always_other``
+        Ask ``other`` every turn. In the released evaluator this weakly
+        dominates a specific attribute because it can reveal any two
+        undisclosed constraints.
 
-    The policy never asks ``category`` or ``brand`` because the public
-    classifier cannot return either one.
+    ``other_twice_rotate``
+        Follow the Day-2 fallback exactly: ask ``other`` on the first two
+        agent turns, then rotate ``feature -> material -> color -> style``.
+        This is the robustness/presentation fallback that Day 3 asks us to
+        compare against ``always_other`` on the real evaluator.
+
+    Both modes are guaranteed non-null and never emit ``brand`` or
+    ``category``.
     """
 
-    FALLBACK_ORDER = ("feature", "use_case", "material", "color", "size", "style", "budget")
+    FALLBACK_ORDER = ("feature", "material", "color", "style")
+
+    def __init__(self, mode: str = POLICY_OTHER_TWICE_ROTATE) -> None:
+        if mode not in QUESTION_POLICY_MODES:
+            raise ValueError(
+                f"unknown question-policy mode {mode!r}; expected one of {QUESTION_POLICY_MODES}"
+            )
+        self.mode = mode
 
     def next_attribute(
         self,
         state: SlotState,
         candidate_attribute_scores: Mapping[str, float] | None = None,
     ) -> str:
-        if state.other_constraint_replies < 2 and not state.other_exhausted:
+        # The comparison requested in Day 3 is deliberately simple and
+        # deterministic. ``candidate_attribute_scores`` remains accepted for
+        # interface compatibility with Day 1, but does not override the two
+        # policies being measured.
+        del candidate_attribute_scores
+
+        if self.mode == POLICY_ALWAYS_OTHER:
+            ask_attribute = "other"
+        elif len(state.asked_attributes) < 2:
+            ask_attribute = "other"
+        else:
+            index = (len(state.asked_attributes) - 2) % len(self.FALLBACK_ORDER)
+            ask_attribute = self.FALLBACK_ORDER[index]
+
+        if ask_attribute not in SAFE_ASK_ATTRIBUTES:
+            # Defensive invariant: never let future edits emit a dead or null
+            # attribute into the evaluator.
             return "other"
-
-        if candidate_attribute_scores:
-            usable = [
-                (float(score), attr)
-                for attr, score in candidate_attribute_scores.items()
-                if attr in USEFUL_CLASSIFIED_ATTRIBUTES
-            ]
-            if usable:
-                # Stable deterministic tie-break by attribute name.
-                return max(usable, key=lambda item: (item[0], item[1]))[1]
-
-        fallback_index = max(0, len(state.asked_attributes) - 2) % len(self.FALLBACK_ORDER)
-        return self.FALLBACK_ORDER[fallback_index]
+        return ask_attribute
 
 
 def attribute_constraint_table() -> list[dict]:
@@ -549,11 +577,17 @@ def _self_check() -> list[str]:
     return failures
 
 
-def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
-    """Measure this policy against the released simulator, dev-only.
+def _public_dialog_metrics(
+    catalog_path: Path,
+    public_set_path: Path,
+    *,
+    policy_mode: str = POLICY_OTHER_TWICE_ROTATE,
+) -> dict:
+    """Measure card-drain speed and scenario-router accuracy on the public set.
 
-    Importing evaluator code here is intentional diagnostics only; the classes
-    above stay evaluator-independent for integration into starter/agent.py.
+    This is diagnostics only. Runtime classes above remain evaluator-independent.
+    Boundary is intentionally resolved on the first reply because it is
+    indistinguishable from browsing in the opening message.
     """
 
     from collections import Counter, defaultdict
@@ -570,20 +604,34 @@ def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
     _, categories, products = catalog_index(catalog_path)
     samples = load_jsonl(public_set_path)
     by_scenario: dict[str, list[int]] = defaultdict(list)
+    routed_correct = 0
+    family_correct = 0
 
     for sample in samples:
         card, behavior = materialize_hidden_fields(sample, products)
         effective = {**sample, "intent_card": card, "behavior": behavior}
         target = str(sample["ground_truth"]["parent_asin"])
+        expected = str(sample["scenario_type"])
 
         disclosed: set[str] = set()
         boundary_used = False
-        override_applied = sample["scenario_type"] != "intent_override"
-        message = initial_message(effective, coarse_category(categories.get(target, [])), disclosed)
+        override_applied = expected != "intent_override"
+        message = initial_message(
+            effective, coarse_category(categories.get(target, [])), disclosed
+        )
 
         state = SlotState(str(sample["sample_id"]))
         state.update(message, turn=1)
-        policy = QuestionPolicy()
+        policy = QuestionPolicy(policy_mode)
+
+        # Turn-1 family routing is the strongest possible claim: browsing and
+        # boundary share exactly the same opener, so both map to the same
+        # provisional family until the first reply.
+        expected_family = (
+            "browsing_or_boundary" if expected in {"browsing", "boundary"} else expected
+        )
+        if state.scenario == expected_family:
+            family_correct += 1
 
         card_values = list(
             dict.fromkeys(
@@ -595,8 +643,14 @@ def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
         )
 
         drain_turn: int | None = 0 if set(card_values).issubset(disclosed) else None
+        router_resolved = state.scenario in {
+            "buying", "browsing", "boundary", "intent_override"
+        }
+        if router_resolved and state.scenario == expected:
+            routed_correct += 1
+
         for turn in range(1, 11):
-            if drain_turn is not None:
+            if drain_turn is not None and router_resolved:
                 break
 
             ask_attribute = policy.next_attribute(state)
@@ -608,7 +662,11 @@ def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
                 new_value = str(override.get("new_value", ""))
                 if new_value:
                     disclosed.add(new_value)
-                message = str(override.get("message", "Actually, please ignore my earlier preference."))
+                message = str(
+                    override.get(
+                        "message", "Actually, please ignore my earlier preference."
+                    )
+                )
             else:
                 message, boundary_used = customer_reply(
                     effective,
@@ -617,17 +675,21 @@ def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
                     boundary_used,
                 )
 
-            # The response happens between agent turns, so label it as the next
-            # user turn for state parsing.  The exact integer only matters for
-            # route/boundary logic.
             state.update(message, turn=turn + 1)
 
-            if set(card_values).issubset(disclosed):
+            if not router_resolved and state.scenario in {
+                "buying", "browsing", "boundary", "intent_override"
+            }:
+                router_resolved = True
+                if state.scenario == expected:
+                    routed_correct += 1
+
+            if drain_turn is None and set(card_values).issubset(disclosed):
                 drain_turn = turn
 
         if drain_turn is None:
             drain_turn = 11
-        by_scenario[str(sample["scenario_type"])].append(drain_turn)
+        by_scenario[expected].append(drain_turn)
 
     summary = {}
     all_values: list[int] = []
@@ -643,13 +705,39 @@ def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
         "distribution": dict(sorted(Counter(all_values).items())),
         "mean_question_turns": round(sum(all_values) / len(all_values), 3),
     }
+    summary["router"] = {
+        "sample_count": len(samples),
+        "turn1_family_correct": family_correct,
+        "turn1_family_accuracy": round(family_correct / len(samples), 6) if samples else 0.0,
+        "resolved_correct": routed_correct,
+        "resolved_accuracy": round(routed_correct / len(samples), 6) if samples else 0.0,
+    }
     return summary
 
 
+def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
+    """Backward-compatible Day-1 diagnostic alias."""
+
+    return _public_dialog_metrics(
+        catalog_path, public_set_path, policy_mode=POLICY_OTHER_TWICE_ROTATE
+    )
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sheng Yan Day-1 dialog diagnostics")
+    parser = argparse.ArgumentParser(description="Sheng Yan dialog diagnostics")
     parser.add_argument("--catalog", default="data/catalog.jsonl")
     parser.add_argument("--public-set", default="data/public_set.jsonl")
+    parser.add_argument(
+        "--policy",
+        choices=QUESTION_POLICY_MODES,
+        default=POLICY_OTHER_TWICE_ROTATE,
+        help="policy used for the drain diagnostic",
+    )
+    parser.add_argument(
+        "--compare-policies",
+        action="store_true",
+        help="print drain diagnostics for both Day-3 policy variants",
+    )
     parser.add_argument(
         "--skip-public-metrics",
         action="store_true",
@@ -657,11 +745,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print("Sheng Yan Day-1: attribute -> constraint map")
+    print("Sheng Yan: attribute -> constraint map")
     print(_format_table(attribute_constraint_table()))
     print()
     print("Confirmed: brand and category are never classify_constraint() outputs.")
-    print("Ordering trap: budget is checked before material, so mixed budget+material text routes to budget.")
+    print(
+        "Ordering trap: budget is checked before material, so mixed "
+        "budget+material text routes to budget."
+    )
 
     failures = _self_check()
     print()
@@ -676,19 +767,38 @@ def main() -> int:
         catalog = Path(args.catalog)
         public_set = Path(args.public_set)
         if catalog.exists() and public_set.exists():
-            metrics = _public_drain_metrics(catalog, public_set)
-            print("\nQuestion-policy drain metrics on released 200-session set:")
-            for scenario in ("buying", "browsing", "intent_override", "boundary", "overall"):
-                row = metrics.get(scenario)
-                if row:
+            modes = QUESTION_POLICY_MODES if args.compare_policies else (args.policy,)
+            first_router = None
+            for mode in modes:
+                metrics = _public_dialog_metrics(
+                    catalog, public_set, policy_mode=mode
+                )
+                if first_router is None:
+                    first_router = metrics["router"]
                     print(
-                        f"  {scenario:16s} n={row['n']:3d} "
-                        f"distribution={row['distribution']} "
-                        f"mean={row['mean_question_turns']}"
+                        "\nScenario-router accuracy on released 200-session set: "
+                        f"turn-1 family={first_router['turn1_family_correct']}/"
+                        f"{first_router['sample_count']} "
+                        f"({first_router['turn1_family_accuracy']:.1%}), "
+                        f"resolved={first_router['resolved_correct']}/"
+                        f"{first_router['sample_count']} "
+                        f"({first_router['resolved_accuracy']:.1%})"
                     )
+
+                print(f"\nQuestion-policy drain metrics [{mode}]:")
+                for scenario in (
+                    "buying", "browsing", "intent_override", "boundary", "overall"
+                ):
+                    row = metrics.get(scenario)
+                    if row:
+                        print(
+                            f"  {scenario:16s} n={row['n']:3d} "
+                            f"distribution={row['distribution']} "
+                            f"mean={row['mean_question_turns']}"
+                        )
         else:
             print(
-                "\nPublic drain metrics skipped: expected catalog/public-set files were not found. "
+                "\nPublic metrics skipped: expected catalog/public-set files were not found. "
                 "Run with --catalog and --public-set after placing the catalog under data/."
             )
 
