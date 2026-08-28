@@ -30,6 +30,7 @@ from evaluator.local_evaluator import (  # noqa: E402
     catalog_index, coarse_category, customer_reply, initial_message,
     load_jsonl, materialize_hidden_fields,
 )
+from src.dialog import route_scenario  # noqa: E402
 from src.retrieval import (  # noqa: E402
     BM25Route, DenseRoute, NgramRoute, extract_constraints, load_catalog,
 )
@@ -294,6 +295,20 @@ def cmd_rescore(cases: list[dict], routes: RouteCache, args) -> None:
         feat.append(sorted(pool, key=lambda a, c=cons, r=rank_of: -features(
             a, c, r[a])))
     print_row("feature rescored", feat, cases, 10)
+
+    if args.dense:
+        # Route from the message text, not case["scenario"] - the label isn't
+        # available at inference time. route_scenario(turn=1) on a single-turn
+        # query never returns "boundary"/"browsing" (those need turn>=2 replay
+        # against prior state) or "override" (the function returns
+        # "intent_override"); at turn 1 it only distinguishes "buying",
+        # "intent_override", and the provisional "browsing_or_boundary".
+        cond = []
+        for pool, dense_ordered, case in zip(bm_lists, rescored, cases):
+            detected = route_scenario(case["query"], turn=1)
+            cond.append(pool if detected in ("buying", "intent_override")
+                        else dense_ordered)
+        print_row("conditional (vague only)", cond, cases, 10)
 
 
 COMMANDS = {
