@@ -127,7 +127,7 @@ def main() -> None:
     )
     parser.add_argument("--split", choices=("tune", "holdout", "all"), default="tune")
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--runs", type=Path, default=ROOT / "runs.csv")
+    parser.add_argument("--runs", type=Path, default=ROOT / "runs" / "runs.csv")
     parser.add_argument("--label", default="day1-random-fill-v1")
     args = parser.parse_args()
 
