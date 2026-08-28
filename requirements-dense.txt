@@ -1,0 +1,2 @@
+# Optional dependencies for src.retrieval.DenseRoute.
+sentence-transformers==6.0.0

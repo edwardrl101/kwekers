@@ -307,7 +307,21 @@ class DenseRoute:
         """
         from sentence_transformers import SentenceTransformer
 
-        self.model = SentenceTransformer(model_name or self.MODEL, device=device)
+        selected_model = model_name or self.MODEL
+        try:
+            # Prefer an already-downloaded model.  Without this flag,
+            # Hugging Face performs several online metadata checks even when
+            # every required file is cached, making offline startup spend
+            # minutes retrying unreachable URLs.
+            self.model = SentenceTransformer(
+                selected_model,
+                device=device,
+                local_files_only=True,
+            )
+        except OSError:
+            # First-time setup still works normally: if the model is absent
+            # locally, allow sentence-transformers to download it.
+            self.model = SentenceTransformer(selected_model, device=device)
         cache_path = Path(cache)
         asins = list(catalog.keys())
 

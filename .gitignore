@@ -1,5 +1,6 @@
 __pycache__/
 *.py[cod]
+.venv/
 .DS_Store
 .env
 results.json
@@ -7,6 +8,7 @@ scripts/
 data/split.json
 results_*.json
 data/catalog.jsonl
+data/dense_cache.npz
 data/releases/
 # Organizer-only code, private evaluation data, manifests, and build reports.
 organizer/
