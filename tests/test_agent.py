@@ -40,6 +40,13 @@ class AgentShellTest(unittest.TestCase):
             self.assertEqual(response["ask_attribute"], "other")
             self.assertEqual(len(response["recommendations"]), 10)
 
+    def test_missing_dense_cache_never_triggers_an_automatic_build(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)))
+
+            self.assertIsNone(agent._dense_route)
+            self.assertIn("Dense cache not found", agent._route_errors["dense"])
+
     def test_broken_route_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             agent = Agent(self._catalog(Path(directory)), enable_dense=False)
@@ -98,6 +105,87 @@ class AgentShellTest(unittest.TestCase):
             self.assertEqual(results["exact"], [("A002", 0.9)])
             self.assertEqual(results["bm25"], [("A003", 12.5)])
             self.assertEqual(results["dense"], [("A004", 0.75)])
+
+    def test_fusion_uses_only_bm25_pool_and_promotes_exact_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            route_results = {
+                "bm25": [(f"A{index:03d}", 100.0 - index) for index in range(10)],
+                "exact": [("A003", 1.0), ("A019", 1.0)],
+                "bucket": [],
+                "dense": [("A019", 0.99)],
+            }
+
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertEqual(fused[0], "A003")
+            self.assertNotIn("A019", fused)
+            self.assertEqual(set(fused), {f"A{index:03d}" for index in range(10)})
+
+    def test_dense_evidence_can_promote_a_bm25_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            route_results = {
+                "bm25": [(f"A{index:03d}", 100.0 - index) for index in range(10)],
+                "exact": [],
+                "bucket": [],
+                "dense": [("A002", 0.9), ("A000", 0.1)],
+            }
+
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertLess(fused.index("A002"), 2)
+            self.assertNotEqual(fused, [f"A{index:03d}" for index in range(10)])
+
+    def test_respond_builds_an_accumulated_query_across_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            queries: list[str] = []
+
+            def bm25(_session: dict, query: str, _turn: int):
+                queries.append(query)
+                return [(f"A{index:03d}", 100.0 - index) for index in range(10)]
+
+            agent._route_bm25 = bm25
+            agent._route_bucket = lambda *_: []
+            agent._route_exact = lambda *_: []
+            agent._route_dense = lambda *_: []
+            agent.reset("session", {})
+
+            agent.respond(
+                "session",
+                "I'm looking for Shoes. A key requirement is: leather.",
+                1,
+                10,
+            )
+            agent.respond(
+                "session",
+                "For that, what matters is: color: black.",
+                2,
+                10,
+            )
+
+            self.assertEqual(queries[0], "Shoes leather")
+            self.assertEqual(queries[1], "Shoes leather color: black")
+
+    def test_accumulated_query_removes_overridden_constraint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            agent.reset("session", {})
+            session = agent._sessions["session"]
+
+            first = agent._update_retrieval_context(
+                session, "I'm looking for Shirts. Department: Womens", 1
+            )
+            overridden = agent._update_retrieval_context(
+                session,
+                "Actually, ignore my earlier preference. What I need is: wool.",
+                3,
+            )
+
+            self.assertIn("Department: Womens", first)
+            self.assertNotIn("Department: Womens", overridden)
+            self.assertIn("wool", overridden)
 
 
 if __name__ == "__main__":

@@ -7,10 +7,11 @@ the evaluator directly calls. It owns catalog loading, retrieval-route startup,
 per-session state, candidate collection, failure isolation, final recommendation
 formatting, and the clarification attribute returned to the customer simulator.
 
-The current implementation is a **working route shell** rather than the final
-hybrid search architecture. It calls bucket, exact, BM25, and dense adapters and
-preserves each route's scores, but still concatenates IDs in route order instead
-of using those scores for fusion.
+The current implementation is a **working first hybrid pipeline**. `SlotState`
+builds a cumulative query, BM25 supplies a 500-product base pool, and exact,
+bucket, and dense evidence promote products within that pool using an
+interpretable weighted score. It deliberately does not inject non-BM25 products
+yet; that is a later recall enhancement.
 
 The two required public methods are:
 
@@ -32,60 +33,60 @@ response = agent.respond(session_id, user_message, turn, top_k)
 | Call bucket route | Complete | `BucketRoute` is initialized and queried |
 | Call exact route | Complete | `ExactRoute` is initialized and queried |
 | Call BM25 route | Complete | `BM25Route` is initialized and queried |
-| Call dense route | Partial | Dependency and offline-first loading work; the machine-local 50k embedding cache still needs its one-time build |
-| Integrate dialog teammate module | Not done | `SlotState` and `QuestionPolicy` exist but are not used by `Agent` |
+| Call dense route | Complete | The supplied 50k cache is loaded; smoke initialization reports no route errors |
+| Integrate dialog teammate module | Partial | `SlotState` accumulation/override is connected; `QuestionPolicy` is not yet used |
 | Retrieve 500 BM25 candidates | Complete | `ROUTE_CANDIDATE_LIMIT = 500` and the route-adapter test verifies it |
 | Preserve route scores and identity | Complete | `_route_candidates()` returns a scored list for each named route |
-| Narrow and rescore a wide BM25 pool | Not done | Scores are retained but not yet consumed; route lists are still concatenated |
+| Narrow and rescore a wide BM25 pool | Complete, v1 | Rank-normalized BM25 is adjusted by exact, bucket, and normalized dense evidence |
 | Isolate route failures | Complete | Initialization and every route call have separate exception handling |
 | Evaluation script and CSV logging | Complete | `scripts/eval.py` and `runs.csv` exist |
 | Fixed 140/60 split | Complete | `data/eval_split.json` is committed |
 | Avoid equal-weight RRF | Complete | No RRF is implemented |
-| BM25 as base ordering | Not done | Bucket candidates currently come before BM25 candidates |
-| First integrated score reported | Newly measured | Clean in-memory measurement is documented below |
+| BM25 as base ordering | Complete | `_fuse_bm25_pool()` admits only BM25 candidates and uses BM25 rank as its tie-breaker |
+| First fused score reported | Complete | Tune and holdout measurements are documented below and logged in `runs.csv` |
 
 As a practical summary:
 
-- The **reliability and measurement shell is mostly complete**.
-- The **four retrieval adapters are connected**.
-- The **500-candidate collection and score-preservation plumbing is complete**.
-- The **actual promote/demote fusion and dialog-state design remains to be
-  implemented**.
+- The **reliability and measurement shell is complete**.
+- The **four retrieval adapters and supplied dense cache are connected**.
+- The **500-candidate BM25-base fusion and accumulated slot query work end to
+  end**.
+- Fusion weights, candidate injection, attribute selection, and richer
+  constraint-violation features remain improvement work.
 
-## 3. First integrated measurement
+## 3. First fused measurement
 
-The temporary debug prints and unconditional first-session `break` have been
-removed from `evaluator/local_evaluator.py`, so `scripts/eval.py` once again
-runs complete splits. The following measurement predates the current
-500-candidate/score-preservation change and should be treated as its comparison
-baseline:
+The fixed tune and holdout splits were evaluated with the supplied dense cache.
+The previous route-concatenation score is shown for comparison:
 
-| Split | Samples | Technical score | Hit@10 | MRR | MTTC |
-|---|---:|---:|---:|---:|---:|
-| Tune | 140 | **0.658371** | 0.764286 | 0.432188 | 3.671429 |
-| Holdout | 60 | **0.656248** | 0.783333 | 0.393049 | 3.666667 |
+| Split | Version | Samples | Technical score | Hit@10 | MRR | MTTC |
+|---|---|---:|---:|---:|---:|---:|
+| Tune | Previous concatenation | 140 | 0.658371 | 0.764286 | 0.432188 | 3.671429 |
+| Tune | **BM25 fusion v1** | 140 | **0.818984** | **0.942857** | **0.597089** | **2.578571** |
+| Holdout | Previous concatenation | 60 | 0.656248 | 0.783333 | 0.393049 | 3.666667 |
+| Holdout | **BM25 fusion v1** | 60 | **0.822776** | **0.950000** | **0.598142** | **2.583333** |
 
 ### Tune scenarios
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
-| Buying | 56 | 0.821429 | 0.470855 | 3.000000 |
-| Browsing | 56 | 0.875000 | 0.491461 | 2.428571 |
-| Intent override | 21 | 0.285714 | 0.140476 | 8.904762 |
-| Boundary | 7 | 0.857143 | 0.523810 | 3.285714 |
+| Buying | 56 | 0.946429 | 0.518892 | 2.053571 |
+| Browsing | 56 | 0.946429 | 0.642708 | 2.428571 |
+| Intent override | 21 | 0.904762 | 0.738946 | 4.333333 |
+| Boundary | 7 | 1.000000 | 0.432143 | 2.714286 |
 
 ### Holdout scenarios
 
 | Scenario | N | Hit@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
-| Buying | 24 | 0.916667 | 0.533681 | 2.208333 |
-| Browsing | 24 | 0.750000 | 0.253803 | 3.750000 |
-| Intent override | 9 | 0.444444 | 0.370370 | 7.888889 |
-| Boundary | 3 | 1.000000 | 0.450000 | 2.000000 |
+| Buying | 24 | 0.958333 | 0.631019 | 2.041667 |
+| Browsing | 24 | 0.958333 | 0.525794 | 2.416667 |
+| Intent override | 9 | 0.888889 | 0.666667 | 4.222222 |
+| Boundary | 3 | 1.000000 | 0.708333 | 3.333333 |
 
-These numbers show that the modules already contain useful retrieval signal.
-Intent override is the clearest weakness, which is consistent with dialog state
-being implemented in `src/dialog.py` but disconnected from `Agent`.
+These numbers validate the pipeline shape before weight tuning. The largest
+change is intent override: accumulating active constraints and demoting the old
+preference raised tune Hit@10 from `0.285714` to `0.904762`.
 
 ## 4. Architecture at a glance
 
@@ -99,39 +100,32 @@ flowchart TD
     Load --> BM25Init[Initialize BM25Route]
     Load --> DenseInit[Try to initialize DenseRoute]
 
-    Message[Current user message] --> BucketQ[Bucket query limit 500]
-    Message --> ExactQ[Exact query limit 500]
-    Message --> BM25Q[BM25 query limit 500]
-    Message --> DenseQ[Dense query limit 500]
+    Message[Current user message] --> State[Update SlotState]
+    State --> Query[Build category plus active constraints]
+    Query --> BucketQ[Bucket evidence limit 500]
+    Query --> ExactQ[Exact evidence per active constraint]
+    Query --> BM25Q[BM25 base pool limit 500]
+    Query --> DenseQ[Dense evidence limit 500]
 
     BucketInit --> BucketQ
     ExactInit --> ExactQ
     BM25Init --> BM25Q
     DenseInit --> DenseQ
 
-    BucketQ --> Merge[Concatenate and deduplicate]
-    ExactQ --> Merge
-    BM25Q --> Merge
-    DenseQ --> Merge
-    Merge --> FirstTen[Keep first 10 valid IDs]
+    BM25Q --> Fusion[Normalize BM25 rank]
+    BucketQ --> Fusion[Add bucket boost]
+    ExactQ --> Fusion[Add exact boost]
+    DenseQ --> Fusion[Add normalized dense evidence]
+    Fusion --> FirstTen[Sort and keep first 10 valid IDs]
     FirstTen --> Fill[Random fill if fewer than 10]
     Fill --> Response[Return message, other, and 10 recommendations]
 ```
 
 ### Important consequence
 
-The merge order is:
-
-```python
-bucket -> exact -> BM25 -> dense
-```
-
-If the bucket route returns 500 IDs, the first ten bucket IDs become the final
-recommendations. Exact, BM25, and dense still run, but their candidates cannot
-reach the output on that turn.
-
-This is not equal-weight RRF, but it is also not the requested BM25-base fusion.
-It is route-priority concatenation.
+BM25 now controls candidate admission. Exact, bucket, and dense can promote only
+products already in the BM25 top 500. This makes the first fusion version easy
+to reason about, but it cannot rescue a target that BM25 fails to retrieve.
 
 ## 5. Constants
 
@@ -139,6 +133,9 @@ It is route-priority concatenation.
 RECOMMENDATION_COUNT = 10
 ROUTE_CANDIDATE_LIMIT = 500
 RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
+EXACT_MATCH_BOOST = 0.35
+BUCKET_MATCH_BOOST = 0.10
+DENSE_SIMILARITY_WEIGHT = 0.20
 ```
 
 ### `RECOMMENDATION_COUNT`
@@ -197,14 +194,17 @@ On the present machine:
 BucketRoute = available
 ExactRoute  = available
 BM25Route   = available
-DenseRoute  = model/dependency available; full-catalog cache pending
+DenseRoute  = available with supplied 50k cache
 ```
 
-The dense route passes a small smoke test and now prefers locally cached model
-files without network metadata checks. Its one-time 50k CPU cache build is not
-complete on this machine; the measured throughput makes that a separate,
-long-running preparation step. Dense remains failure-isolated because the
-dependency, model, or cache may not exist in an offline judging environment.
+The supplied `data/dense_cache.npz` contains 50,000 ASINs and a `50000 x 384`
+embedding matrix. A real-agent smoke test initialized all routes in 21.25
+seconds and produced a fused response in 0.256 seconds. Runtime checks for this
+cache before constructing `DenseRoute`, so evaluator startup cannot
+accidentally trigger a full catalog encode. Dense remains failure-isolated when
+the dependency, model, or cache is absent. `Agent` also passes
+`build_if_missing=False`, so an existing but mismatched cache fails closed
+instead of starting generation; only the standalone builder permits encoding.
 
 ## 7. `_load_catalog()`
 
@@ -432,14 +432,12 @@ model dependencies and a prepared cache.
 
 ```bash
 python -m pip install -r requirements-dense.txt
-python scripts/build_dense_cache.py --device cpu
 ```
 
-The builder validates row counts and runs a smoke query after writing
-`data/dense_cache.npz`. That generated machine-local artifact is intentionally
-gitignored. On this CPU, the original full-document encoding was projected to
-take several hours, so run the one-time build on faster CPU or GPU hardware when
-possible.
+The supplied `data/dense_cache.npz` is already complete and is the runtime
+source; do not regenerate it during ordinary development or evaluation. The
+artifact is intentionally gitignored. `scripts/build_dense_cache.py` remains a
+recovery tool for a genuinely missing cache, but a CPU rebuild may take hours.
 
 ### Existing but unused N-gram route
 
@@ -460,10 +458,9 @@ for name, route in routes:
     route_results[name] = candidates
 ```
 
-Its output preserves route identity, ranking, and scores. The separate
-`_concatenate_route_ids()` compatibility step still concatenates and
-deduplicates IDs while retaining first occurrence; this is the outstanding
-fusion gap.
+Its output preserves route identity, ranking, and scores. `_fuse_bm25_pool()`
+then admits only BM25 candidates, normalizes BM25 rank, applies supporting
+evidence, and sorts by fused score with original BM25 rank as the tie-breaker.
 
 ### Example
 
@@ -476,14 +473,15 @@ bm25   = [("TARGET", 3020.0), ("D", 3010.0), ("A", 3001.0)]
 dense  = [("E", 0.82), ("TARGET", 0.80)]
 ```
 
-Current merged output:
+With illustrative normalized values, the fused output could be:
 
 ```python
-["A", "B", "C", "TARGET", "D", "E"]
+["TARGET", "D", "A"]
 ```
 
-`TARGET` keeps its first position from the exact route. Scores are available in
-`route_results`, but the compatibility concatenation does not use them yet.
+`E` is excluded because it is absent from the BM25 pool. `TARGET` can be
+promoted because it has both exact and dense evidence. `A` remains eligible
+because BM25 retrieved it even though the other routes are weaker.
 
 ### Route failure example
 
@@ -495,10 +493,10 @@ exact  = exception
 bm25   = [("TARGET", 3020.0), ("D", 3010.0)]
 ```
 
-The merged output remains:
+Fusion still returns BM25 candidates:
 
 ```python
-["A", "B", "C", "TARGET", "D"]
+["TARGET", "D"]
 ```
 
 This satisfies the requirement that one teammate's crash must not zero the
@@ -601,13 +599,13 @@ ten-item competition rule.
 | `src/buckets.py` | `BucketRoute` | Initialized and queried |
 | `src/exact.py` | `ExactRoute` | Initialized and queried |
 | `src/retrieval.py` | `BM25Route` | Initialized and queried |
-| `src/retrieval.py` | `DenseRoute` | Connected; local model works, 50k cache build pending |
+| `src/retrieval.py` | `DenseRoute` | Connected and using supplied 50k cache |
 | `src/retrieval.py` | `NgramRoute` | Not used |
-| `src/dialog.py` | `SlotState` | Not used |
-| `src/dialog.py` | `ScenarioRouter` | Not used directly |
-| `src/dialog.py` | `QuestionPolicy` | Not used |
+| `src/dialog.py` | `SlotState` | Created per session; accumulates and overrides active constraints |
+| `src/dialog.py` | `ScenarioRouter` | Used indirectly by `SlotState.update()` |
+| `src/dialog.py` | `QuestionPolicy` | Not yet used; agent still asks `other` |
 
-### What the disconnected dialog module already provides
+### What the dialog module provides
 
 `SlotState.update()` can:
 
@@ -694,9 +692,9 @@ score += dense_weight * normalized_dense_score
 This obeys the instruction to start with BM25 ordering and let teammate signals
 promote or demote. It is not equal-weight reciprocal-rank fusion.
 
-## 17. Dialog-state integration target
+## 17. Dialog-state integration
 
-`reset()` should eventually create state resembling:
+`reset()` now creates state resembling:
 
 ```python
 from src.dialog import QuestionPolicy, SlotState
@@ -704,46 +702,45 @@ from src.dialog import QuestionPolicy, SlotState
 self._sessions[session_id] = {
     "user_profile": user_profile,
     "slot_state": SlotState(session_id=session_id),
-    "question_policy": QuestionPolicy(),
+    "category": "",
+    "active_constraints": [],
 }
 ```
 
-Every `respond()` call should:
+Every `respond()` call now:
 
 ```python
 state.update(user_message, turn)
-query = build_query(state.to_context(), user_profile)
-candidates = retrieve_and_fuse(query)
-ask_attribute = policy.next_attribute(state, information_gain)
-state.record_ask(ask_attribute)
+query = category + active_constraints
+route_results = query_all_routes(query)
+candidates = fuse_bm25_pool(route_results)
+state.record_ask("other")
 ```
 
-This solves a major current defect: routes now see only the newest message.
-After the customer reveals a new constraint, earlier category and constraint
-information can disappear from the query. A cumulative structured query keeps
-active constraints while correctly demoting overridden ones.
+This fixes the previous latest-message-only defect. Earlier category and active
+constraints remain in the query, while `SlotState` demotes the old preference
+after an override. `QuestionPolicy` and information gain remain unconnected.
 
-## 18. Why intent override is currently weak
+## 18. Why intent override improved
 
 The tune intent-override metrics are:
 
 ```text
-Hit@10 = 0.285714
-MRR    = 0.140476
-MTTC   = 8.904762
+Hit@10 = 0.904762
+MRR    = 0.738946
+MTTC   = 4.333333
 ```
 
-Likely contributing mechanisms are visible in the code:
+The mechanisms are visible in the code:
 
-1. No `SlotState` is connected.
-2. Routes query only the current message.
-3. Old and new preferences are not explicitly distinguished by `Agent`.
-4. Target hits before the override are intentionally ineligible.
-5. Preserved route scores are not yet used for ranking.
-6. Route concatenation can hide strong BM25 or exact results behind bucket IDs.
+1. `SlotState` remembers earlier active constraints.
+2. The cumulative query retains the product category across turns.
+3. An override demotes the old preference and activates the replacement.
+4. BM25 remains the candidate base while exact and dense evidence can promote
+   the target after the override becomes eligible.
 
-The dialog teammate code was designed specifically to address accumulation and
-override behavior, so integration should precede more exotic fusion work.
+The remaining gap is not basic state integration; it is improving question
+selection and fusion without overfitting the small public sample.
 
 ## 19. Evaluation workflow
 
@@ -768,7 +765,7 @@ the team does not gradually optimize against it.
 
 ## 20. Tests and safety guarantees
 
-The current repository has 21 passing tests. Agent-specific tests verify:
+The current repository has 26 passing tests. Agent-specific tests verify:
 
 - Exactly ten unique recommendations
 - A non-null `"other"` question
@@ -778,23 +775,27 @@ The current repository has 21 passing tests. Agent-specific tests verify:
 - Stable random fill across evaluator UUIDs
 - Every route adapter delegates with the 500-candidate limit
 - Route identity and finite scores are preserved
+- BM25 is the exclusive v1 candidate pool
+- Exact and dense evidence promote in-pool candidates
+- Active constraints accumulate across turns
+- An override removes the old preference from the active query
+- A missing dense cache cannot trigger an automatic catalog encode
 
 Tests establish the shell contract, but do not yet verify:
 
-- BM25 base ordering
-- Score-preserving fusion
-- Dialog-state accumulation
-- Override demotion through the full `Agent`
-- Dense behavior when dependencies are available
+- Exact numeric fusion weights against a golden catalog fixture
+- Candidate injection for exact or dense results outside BM25
+- Information-gain question selection
+- Full dense-cache integrity in unit tests
 
 ## 21. Recommended next implementation order
 
-### Midday correctness pass
+### Next correctness pass
 
-1. Build the machine-local dense cache on suitable hardware.
-2. Make BM25 the base pool and apply simple exact, bucket, and dense boosts.
-3. Connect `SlotState` and `QuestionPolicy` in `reset()` and `respond()`.
-4. Run and log tune plus holdout with a new label.
+1. Add lightweight cache metadata validation without loading all embeddings.
+2. Connect `QuestionPolicy` and candidate-pool information gain.
+3. Add diagnostics that expose per-route ranks and fused scores for one session.
+4. Tune weights on tune only and confirm meaningful checkpoints on holdout.
 
 ### Later improvement pass
 
@@ -802,7 +803,7 @@ Tests establish the shell contract, but do not yet verify:
 2. Add the N-gram route if agreed by the team.
 3. Compute candidate-pool attribute information gain.
 4. Tune signal weights on tune only.
-5. Benchmark and validate dense recall after the cache is built.
+5. Benchmark and validate dense recall from the supplied cache.
 6. Add route latency and health diagnostics.
 
 ## 22. Key takeaways for a new contributor
@@ -811,9 +812,9 @@ Tests establish the shell contract, but do not yet verify:
 2. Ten recommendations, a string message, and non-null asking are guaranteed.
 3. The current high score comes from useful teammate route implementations,
    especially exact and BM25 retrieval.
-4. Route concatenation, unused scores, and disconnected dialog state are the
-   largest remaining gaps relative to the stated architecture.
-5. `src/dialog.py` is not speculative work; it directly addresses the weakest
-   measured scenario.
-6. The immediate end goal is a reliable cumulative-query agent with a 500-item
-   BM25 base pool and simple interpretable promotion and demotion signals.
+4. The main remaining retrieval limitation is that exact and dense cannot rescue
+   candidates outside BM25's top 500.
+5. The current weights are intentionally simple and have not been systematically
+   tuned.
+6. The next goal is better diagnostics and question selection before introducing
+   broader candidate injection or more complex rankers.

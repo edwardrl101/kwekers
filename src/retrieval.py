@@ -298,6 +298,7 @@ class DenseRoute:
         cache: str | Path = "data/dense_cache.npz",
         model_name: str | None = None,
         device: str | None = None,
+        build_if_missing: bool = True,
     ) -> None:
         """device=None lets sentence-transformers choose (MPS on Apple Silicon).
 
@@ -331,6 +332,11 @@ class DenseRoute:
                 self.asins = np.array(asins)
                 self.embeddings = self._sanitize(blob["embeddings"])
                 return
+
+        if not build_if_missing:
+            raise RuntimeError(
+                f"Dense cache is missing or does not match the catalog: {cache_path}"
+            )
 
         documents = [product_text(catalog[a], cap=512) for a in asins]
         raw = self.model.encode(
