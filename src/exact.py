@@ -39,17 +39,10 @@ class ExactRoute:
             for f in features:
                 norm = clean_constraint(f)
                 if norm:
-<<<<<<< HEAD
                     self.exact_index[norm].add(asin)
                     lowered = norm.lower()
                     if lowered != norm:
                         self.exact_index[lowered].add(asin)
-=======
-                    self.exact_index[norm].append(asin)
-                    lowered = norm.lower()
-                    if lowered != norm:
-                        self.exact_index[lowered].append(asin)
->>>>>>> 3b89b37a30f884e56849780ce72fa0cca468d13d
 
             # 2. Key: Value detail pairs
             details = p.get("details") or {}
@@ -64,7 +57,6 @@ class ExactRoute:
                     if lowered != norm:
                         self.exact_index[lowered].add(asin)
 
-<<<<<<< HEAD
             # 3. Bare material token indexing
             full_text = " ".join(features + detail_strings).lower()
             for mat in MATERIALS:
@@ -91,19 +83,6 @@ class ExactRoute:
     def extract_constraints_from_message(self, message: str) -> list[str]:
         """Extracts individual constraint strings across all three message templates."""
         for pat in CONSTRAINT_PATTERNS:
-=======
-    def extract_constraint(
-        self,
-        message: str,
-        _patterns=(
-            re.compile(r"\bA key requirement is:\s*(.+?)(?:\.\s*$|$)", re.I),
-            re.compile(r"\bWhat I need is:\s*(.+?)(?:\.\s*$|$)", re.I),
-            re.compile(r"\bFor that, what matters is:\s*(.+?)(?:\.\s*$|$)", re.I),
-        ),
-    ) -> str:
-        """Extracts customer constraints following the simulator's exact message templates."""
-        for pat in _patterns:
->>>>>>> 3b89b37a30f884e56849780ce72fa0cca468d13d
             match = pat.search(message)
             if match:
                 raw_str = match.group(1)
@@ -159,11 +138,7 @@ if __name__ == "__main__":
     public_path = Path("data/public_set.jsonl")
 
     if not catalog_path.exists():
-<<<<<<< HEAD
         raise SystemExit("data/catalog.jsonl not found. Decompress catalog.jsonl.gz first.")
-=======
-        raise SystemExit("data/catalog.jsonl not found. Please extract catalog.jsonl.gz first.")
->>>>>>> 3b89b37a30f884e56849780ce72fa0cca468d13d
 
     print("Loading catalog into exact index...")
     catalog = {
@@ -180,11 +155,7 @@ if __name__ == "__main__":
                 row = json.loads(line)
                 if row.get("scenario_type") == "buying":
                     buying_sessions.append(row)
-<<<<<<< HEAD
 
-=======
-        
->>>>>>> 3b89b37a30f884e56849780ce72fa0cca468d13d
         candidate_sizes = []
         hits = 0
 
