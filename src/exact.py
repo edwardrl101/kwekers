@@ -1,5 +1,6 @@
 import json
 import re
+import statistics
 from collections import defaultdict
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from pathlib import Path
 MATERIALS = {
     "cotton", "polyester", "nylon", "leather", "wool", "silk", 
     "canvas", "denim", "spandex", "linen", "velvet", "fleece", 
-    "suede", "mesh", "cashmere", "rayon", "satin", "acrylic"
+    "suede", "mesh", "cashmere", "rayon", "satin", "acrylic", "fabric"
 }
 
 # Pre-compiled regex patterns with word boundaries
@@ -16,6 +17,17 @@ CONSTRAINT_PATTERNS = (
     re.compile(r"\bWhat I need is:\s*(.+?)(?:\.\s*$|$)", re.IGNORECASE),
     re.compile(r"\bFor that, what matters is:\s*(.+?)(?:\.\s*$|$)", re.IGNORECASE),
 )
+
+UNSUPPORTED_COLOR_CONSTRAINT = re.compile(r"^color\s*:", re.IGNORECASE)
+
+
+def flatten_text(value: object) -> list[str]:
+    """Flatten a catalog value the same way the evaluator's search corpus does."""
+    if isinstance(value, dict):
+        return [f"{key} {item}" for key, item in value.items()]
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)] if value is not None else []
 
 
 def clean_constraint(v: str) -> str:
@@ -58,9 +70,15 @@ class ExactRoute:
                         self.exact_index[lowered].add(asin)
 
             # 3. Bare material token indexing
-            full_text = " ".join(features + detail_strings).lower()
+            full_text = " ".join(
+                part
+                for field in (
+                    "title", "features", "details", "description", "categories", "store"
+                )
+                for part in flatten_text(p.get(field))
+            ).lower()
             for mat in MATERIALS:
-                if mat in full_text:
+                if re.search(rf"\b{re.escape(mat)}\b", full_text):
                     self.material_index[mat].add(asin)
 
             # 4. Catalog prices for budget range queries
@@ -96,6 +114,12 @@ class ExactRoute:
         cleaned = clean_constraint(constraint)
         lowered = cleaned.lower()
 
+        # The current exact index has only sparse explicit colour details.
+        # Treating those partial postings as authoritative caused false vetoes;
+        # Day 3 explicitly defers a complete colour index.
+        if UNSUPPORTED_COLOR_CONSTRAINT.match(cleaned):
+            return set()
+
         # Handler A: Budget ranges ("budget around $29.99")
         budget = self.parse_budget(cleaned)
         if budget is not None:
@@ -112,37 +136,40 @@ class ExactRoute:
         return matches
 
     def exact_matches(self, constraints: list[str]) -> list[str]:
-        """
-        Accepts accumulated constraints across turns.
-        Returns parent ASINs that satisfy ALL disclosed constraints (intersection).
+        """Intersect every indexed constraint, skipping constraints we cannot match.
+
+        The exact route is supporting evidence, not a catalog-wide validator.  A
+        constraint absent from its indexes (notably many colour constraints)
+        must therefore contribute no evidence rather than vetoing evidence from
+        constraints the route does understand.  If none of the constraints are
+        indexed, there is no exact evidence and this returns an empty list.
         """
         if not constraints:
             return []
 
-        constraint_sets = []
+        constraint_sets: list[set[str]] = []
         for c in constraints:
             asins = self._get_single_constraint_matches(c)
-            constraint_sets.append(asins if asins else set())
+            if asins:
+                constraint_sets.append(asins)
 
         if not constraint_sets:
             return []
 
-        # Intersect matching candidate sets across all constraints
+        # Catalog order makes limit truncation and benchmarks reproducible.
         intersection = set.intersection(*constraint_sets)
-        return list(intersection)
+        return [asin for asin in self.catalog if asin in intersection]
 
     def query(self, text: str | list[str], limit: int = 200) -> list[tuple[str, float]]:
-        """
-        Accepts a single message string or a list of accumulated constraint strings.
-        Intersects all active constraints and returns scored tuples.
-        """
+        """Return exact evidence for one message or accumulated constraints."""
+        if limit <= 0:
+            return []
+
         if isinstance(text, list):
             constraints = [clean_constraint(c) for c in text if clean_constraint(c)]
         else:
-            extracted = self.extract_constraints_from_message(text)
-            constraints = extracted if extracted else [clean_constraint(text)]
+            constraints = self.extract_constraints_from_message(text)
 
-        # Intersect all active constraints inside exact.py
         matched_asins = self.exact_matches(constraints)
         return [(asin, 1.0) for asin in matched_asins[:limit]]
 
@@ -169,17 +196,31 @@ if __name__ == "__main__":
                 if row.get("scenario_type") == "buying":
                     buying_sessions.append(row)
 
-        print("\n--- Multi-Turn Constraint Accumulation Benchmark (Buying Sessions) ---")
-        for num_constraints in range(1, 5):
+        # Mirror the evaluator's actual always-"other" disclosure sequence:
+        # opening hard constraint, then up to two remaining constraints per reply.
+        try:
+            from evaluator.local_evaluator import intent_card
+        except ModuleNotFoundError:
+            # Direct ``python src/exact.py`` execution puts only ``src`` on
+            # sys.path; add the repository root for the benchmark import.
+            import sys
+
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            from evaluator.local_evaluator import intent_card
+
+        print("\n--- Actual Disclosure Sequence Benchmark (Buying Sessions) ---")
+        for turn, num_constraints in enumerate((1, 3, 4, 4), start=1):
             candidate_sizes = []
             hits = 0
             for sample in buying_sessions:
-                target = sample["ground_truth"]["parent_asin"]
+                target = str(sample["ground_truth"]["parent_asin"])
                 prod = catalog.get(target, {})
-                features = prod.get("features", [])
-                
-                # Intersect up to N accumulated feature constraints
-                test_constraints = features[:num_constraints]
+                card = sample.get("intent_card") or intent_card(prod)
+                disclosed = [
+                    *card.get("hard_constraints", []),
+                    *card.get("soft_preferences", []),
+                ]
+                test_constraints = disclosed[:num_constraints]
                 if test_constraints:
                     matched = route.exact_matches(test_constraints)
                     candidate_sizes.append(len(matched))
@@ -187,11 +228,10 @@ if __name__ == "__main__":
                         hits += 1
 
             if candidate_sizes:
-                candidate_sizes.sort()
-                median_size = candidate_sizes[len(candidate_sizes) // 2]
+                median_size = statistics.median(candidate_sizes)
                 hit_pct = (hits / len(buying_sessions)) * 100
                 print(
-                    f"Constraints: {num_constraints} | "
+                    f"Turn: {turn} | Constraints: {num_constraints} | "
                     f"Coverage: {hits}/{len(buying_sessions)} ({hit_pct:.2f}%) | "
                     f"Median Candidate Set Size: {median_size}"
                 )
