@@ -68,9 +68,11 @@ class AgentShellTest(unittest.TestCase):
     def test_route_adapters_delegate_and_preserve_scores(self) -> None:
         class FakeRoute:
             def __init__(self) -> None:
-                self.calls: list[tuple[str, int]] = []
+                self.calls: list[tuple[str | list[str], int]] = []
 
-            def query(self, text: str, limit: int) -> list[tuple[str, float]]:
+            def query(
+                self, text: str | list[str], limit: int
+            ) -> list[tuple[str, float]]:
                 self.calls.append((text, limit))
                 return [("A001", 0.9), ("A002", 0.5)]
 
@@ -90,6 +92,70 @@ class AgentShellTest(unittest.TestCase):
                 )
 
             self.assertEqual(route.calls, [("query", 500)] * 4)
+
+    def test_exact_adapter_passes_all_active_constraints_in_one_call(self) -> None:
+        class FakeExactRoute:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str | list[str], int]] = []
+
+            def query(
+                self, text: str | list[str], limit: int
+            ) -> list[tuple[str, float]]:
+                self.calls.append((text, limit))
+                return [("A003", 1.0)]
+
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            route = FakeExactRoute()
+            agent._exact_route = route
+
+            result = agent._route_exact(
+                {"active_constraints": ["cotton", "soft"]},
+                "ignored cumulative query",
+                2,
+            )
+
+            self.assertEqual(result, [("A003", 1.0)])
+            self.assertEqual(route.calls, [(["cotton", "soft"], 500)])
+
+    def test_real_exact_route_intersection_reaches_fusion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path = Path(directory) / "catalog.jsonl"
+            rows = [
+                {
+                    "parent_asin": f"A{index:03d}",
+                    "title": f"Product {index}",
+                    "features": (
+                        ["cotton", "soft"]
+                        if index == 3
+                        else ["cotton"]
+                        if index == 4
+                        else ["soft"]
+                        if index == 5
+                        else ["unrelated"]
+                    ),
+                }
+                for index in range(20)
+            ]
+            catalog_path.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            agent = Agent(catalog_path, enable_dense=False)
+            agent._route_bucket = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(10)
+            ]
+            session = {"active_constraints": ["cotton", "soft"]}
+
+            route_results = agent._route_candidates(session, "query", 2)
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertEqual(route_results["exact"], [("A003", 1.0)])
+            self.assertEqual(fused[0], "A003")
+            session["active_constraints"] = ["cotton", "missing"]
+            self.assertEqual(agent._route_exact(session, "query", 2), [])
 
     def test_route_collection_keeps_route_identity_and_scores(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

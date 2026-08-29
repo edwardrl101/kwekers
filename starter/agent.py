@@ -17,6 +17,7 @@ DENSE_SIMILARITY_WEIGHT = 0.20
 
 ScoredCandidate: TypeAlias = tuple[str, float]
 RouteResults: TypeAlias = dict[str, list[ScoredCandidate]]
+RouteQuery: TypeAlias = str | list[str]
 
 
 class Agent:
@@ -135,11 +136,11 @@ class Agent:
             return None
 
     @staticmethod
-    def _query_route(route: object, user_message: str) -> list[ScoredCandidate]:
+    def _query_route(route: object, query: RouteQuery) -> list[ScoredCandidate]:
         """Validate a route response without discarding its retrieval scores."""
         if route is None:
             return []
-        results = route.query(user_message, limit=ROUTE_CANDIDATE_LIMIT)
+        results = route.query(query, limit=ROUTE_CANDIDATE_LIMIT)
         if not isinstance(results, list):
             return []
         candidates: list[ScoredCandidate] = []
@@ -168,27 +169,9 @@ class Agent:
         self, session: dict, user_message: str, turn: int
     ) -> list[ScoredCandidate]:
         active_constraints = session.get("active_constraints")
-        if not isinstance(active_constraints, list) or not active_constraints:
-            return self._query_route(self._exact_route, user_message)
-
-        # ExactRoute expects one simulator-shaped constraint at a time. Query
-        # every accumulated active constraint independently so a semicolon-
-        # joined synthetic query does not destroy exact-match evidence.
-        combined: list[ScoredCandidate] = []
-        seen: set[str] = set()
-        for constraint in active_constraints:
-            if not isinstance(constraint, str) or not constraint.strip():
-                continue
-            for parent_asin, score in self._query_route(
-                self._exact_route, constraint
-            ):
-                if parent_asin in seen:
-                    continue
-                seen.add(parent_asin)
-                combined.append((parent_asin, score))
-                if len(combined) >= ROUTE_CANDIDATE_LIMIT:
-                    return combined
-        return combined
+        if isinstance(active_constraints, list) and active_constraints:
+            return self._query_route(self._exact_route, active_constraints)
+        return self._query_route(self._exact_route, user_message)
 
     def _route_bm25(
         self, session: dict, user_message: str, turn: int
