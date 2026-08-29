@@ -13,10 +13,11 @@ ROUTE_CANDIDATE_LIMIT = 500
 RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
 EXACT_MATCH_BOOST = 0.35
 BUCKET_MATCH_BOOST = 0.10
-DENSE_SIMILARITY_WEIGHT = 0.20
+DENSE_SIMILARITY_WEIGHT = 0.0
 
 ScoredCandidate: TypeAlias = tuple[str, float]
 RouteResults: TypeAlias = dict[str, list[ScoredCandidate]]
+RouteQuery: TypeAlias = str | list[str]
 
 
 class Agent:
@@ -26,10 +27,18 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
-        enable_dense: bool = True,
+        enable_dense: bool = False,
+        enable_freshness: bool = True,
+        exact_match_boost: float = EXACT_MATCH_BOOST,
+        bucket_match_boost: float = BUCKET_MATCH_BOOST,
+        dense_similarity_weight: float = DENSE_SIMILARITY_WEIGHT,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.enable_dense = enable_dense
+        self.enable_freshness = enable_freshness
+        self.exact_match_boost = float(exact_match_boost)
+        self.bucket_match_boost = float(bucket_match_boost)
+        self.dense_similarity_weight = float(dense_similarity_weight)
         self.dense_cache_path = self.catalog_path.with_name("dense_cache.npz")
         self._catalog = self._load_catalog()
         self._catalog_ids = list(self._catalog)
@@ -130,16 +139,17 @@ class Agent:
                 "category_message": "",
                 "category": "",
                 "active_constraints": [],
+                "shown": set(),
             }
         except Exception:
             return None
 
     @staticmethod
-    def _query_route(route: object, user_message: str) -> list[ScoredCandidate]:
+    def _query_route(route: object, query: RouteQuery) -> list[ScoredCandidate]:
         """Validate a route response without discarding its retrieval scores."""
         if route is None:
             return []
-        results = route.query(user_message, limit=ROUTE_CANDIDATE_LIMIT)
+        results = route.query(query, limit=ROUTE_CANDIDATE_LIMIT)
         if not isinstance(results, list):
             return []
         candidates: list[ScoredCandidate] = []
@@ -168,27 +178,9 @@ class Agent:
         self, session: dict, user_message: str, turn: int
     ) -> list[ScoredCandidate]:
         active_constraints = session.get("active_constraints")
-        if not isinstance(active_constraints, list) or not active_constraints:
-            return self._query_route(self._exact_route, user_message)
-
-        # ExactRoute expects one simulator-shaped constraint at a time. Query
-        # every accumulated active constraint independently so a semicolon-
-        # joined synthetic query does not destroy exact-match evidence.
-        combined: list[ScoredCandidate] = []
-        seen: set[str] = set()
-        for constraint in active_constraints:
-            if not isinstance(constraint, str) or not constraint.strip():
-                continue
-            for parent_asin, score in self._query_route(
-                self._exact_route, constraint
-            ):
-                if parent_asin in seen:
-                    continue
-                seen.add(parent_asin)
-                combined.append((parent_asin, score))
-                if len(combined) >= ROUTE_CANDIDATE_LIMIT:
-                    return combined
-        return combined
+        if isinstance(active_constraints, list) and active_constraints:
+            return self._query_route(self._exact_route, active_constraints)
+        return self._query_route(self._exact_route, user_message)
 
     def _route_bm25(
         self, session: dict, user_message: str, turn: int
@@ -270,10 +262,10 @@ class Agent:
         for rank, (parent_asin, _raw_bm25_score) in enumerate(bm25_pool, start=1):
             score = self._normalize_bm25_rank(rank, candidate_count)
             if parent_asin in exact_ids:
-                score += EXACT_MATCH_BOOST
+                score += self.exact_match_boost
             if parent_asin in bucket_ids:
-                score += BUCKET_MATCH_BOOST
-            score += DENSE_SIMILARITY_WEIGHT * dense_scores.get(parent_asin, 0.0)
+                score += self.bucket_match_boost
+            score += self.dense_similarity_weight * dense_scores.get(parent_asin, 0.0)
             fused.append((parent_asin, score, rank))
 
         # Original BM25 rank is the deterministic tie-breaker.
@@ -320,11 +312,19 @@ class Agent:
         return " ".join(parts) or user_message
 
     def _random_fill(self, candidates: list[str], session: dict, turn: int) -> list[str]:
-        """Pad route results to ten unique recommendations reproducibly."""
+        """Pad route results reproducibly without repeating session history."""
         result: list[str] = []
         seen: set[str] = set()
+        shown = session.get("shown", set()) if isinstance(session, dict) else set()
+        excluded = (
+            shown if self.enable_freshness and isinstance(shown, set) else set()
+        )
         for parent_asin in candidates:
-            if parent_asin in self._catalog_id_set and parent_asin not in seen:
+            if (
+                parent_asin in self._catalog_id_set
+                and parent_asin not in excluded
+                and parent_asin not in seen
+            ):
                 seen.add(parent_asin)
                 result.append(parent_asin)
                 if len(result) == RECOMMENDATION_COUNT:
@@ -338,12 +338,13 @@ class Agent:
         seed_text = f"{RANDOM_FILL_SEED}\0{seed_key}\0{turn}"
         seed = int.from_bytes(hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big")
         rng = random.Random(seed)
+        available_count = len(self._catalog_ids) - len(excluded & self._catalog_id_set)
         while (
             len(result) < RECOMMENDATION_COUNT
-            and len(seen) < len(self._catalog_ids)
+            and len(seen) < available_count
         ):
             parent_asin = self._catalog_ids[rng.randrange(len(self._catalog_ids))]
-            if parent_asin not in seen:
+            if parent_asin not in excluded and parent_asin not in seen:
                 seen.add(parent_asin)
                 result.append(parent_asin)
         if len(result) == RECOMMENDATION_COUNT:
@@ -359,6 +360,16 @@ class Agent:
                 seen.add(placeholder)
                 result.append(placeholder)
         return result
+
+    @staticmethod
+    def _is_override_message(user_message: str) -> bool:
+        """Recognize the evaluator override and close private paraphrases."""
+        try:
+            from src.dialog import OVERRIDE_RE
+
+            return bool(OVERRIDE_RE.search(user_message))
+        except Exception:
+            return "ignore my earlier preference" in user_message.lower()
 
     def respond(
         self,
@@ -378,11 +389,19 @@ class Agent:
             retrieval_query = self._update_retrieval_context(
                 session, safe_message, safe_turn
             )
+            shown = session.get("shown")
+            if not isinstance(shown, set):
+                shown = set()
+                session["shown"] = shown
+            if self.enable_freshness and self._is_override_message(safe_message):
+                shown.clear()
             route_results = self._route_candidates(
                 session, retrieval_query, safe_turn
             )
             routed_ids = self._fuse_bm25_pool(route_results)
             parent_asins = self._random_fill(routed_ids, session, safe_turn)
+            if self.enable_freshness:
+                shown.update(parent_asins)
             slot_state = session.get("slot_state")
             if slot_state is not None:
                 try:

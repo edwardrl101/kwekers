@@ -122,16 +122,29 @@ class ExactRoute:
         constraint_sets = []
         for c in constraints:
             asins = self._get_single_constraint_matches(c)
-            if asins:
-                constraint_sets.append(asins)
+            constraint_sets.append(asins if asins else set())
 
         if not constraint_sets:
             return []
 
         # Intersect matching candidate sets across all constraints
         intersection = set.intersection(*constraint_sets)
-        return list(intersection)
+        return sorted(intersection)
 
+    def query(self, text: str | list[str], limit: int = 200) -> list[tuple[str, float]]:
+        """
+        Accepts a single message string or a list of accumulated constraint strings.
+        Intersects all active constraints and returns scored tuples.
+        """
+        if isinstance(text, list):
+            constraints = [clean_constraint(c) for c in text if clean_constraint(c)]
+        else:
+            extracted = self.extract_constraints_from_message(text)
+            constraints = extracted if extracted else [clean_constraint(text)]
+
+        # Intersect all active constraints inside exact.py
+        matched_asins = self.exact_matches(constraints)
+        return [(asin, 1.0) for asin in matched_asins[:limit]]
 
 if __name__ == "__main__":
     catalog_path = Path("data/catalog.jsonl")
@@ -146,7 +159,7 @@ if __name__ == "__main__":
         for p in (json.loads(l) for l in catalog_path.open(encoding="utf-8"))
     }
     route = ExactRoute(catalog)
-    print(f"Indexed {len(route.exact_index)} unique constraint keys.")
+    print(f"Indexed {len(route.exact_index)} unique normalized constraint keys.")
 
     if public_path.exists():
         buying_sessions = []
@@ -156,23 +169,29 @@ if __name__ == "__main__":
                 if row.get("scenario_type") == "buying":
                     buying_sessions.append(row)
 
-        candidate_sizes = []
-        hits = 0
+        print("\n--- Multi-Turn Constraint Accumulation Benchmark (Buying Sessions) ---")
+        for num_constraints in range(1, 5):
+            candidate_sizes = []
+            hits = 0
+            for sample in buying_sessions:
+                target = sample["ground_truth"]["parent_asin"]
+                prod = catalog.get(target, {})
+                features = prod.get("features", [])
+                
+                # Intersect up to N accumulated feature constraints
+                test_constraints = features[:num_constraints]
+                if test_constraints:
+                    matched = route.exact_matches(test_constraints)
+                    candidate_sizes.append(len(matched))
+                    if target in matched:
+                        hits += 1
 
-        for sample in buying_sessions:
-            target = sample["ground_truth"]["parent_asin"]
-            prod = catalog.get(target, {})
-            features = prod.get("features", [])
-            if features:
-                # Test turn-1 exact lookup using first target constraint
-                matched = route.exact_matches([features[0]])
-                candidate_sizes.append(len(matched))
-                if target in matched:
-                    hits += 1
-
-        if candidate_sizes:
-            candidate_sizes.sort()
-            median_size = candidate_sizes[len(candidate_sizes) // 2]
-            print(f"\nBuying Sessions Benchmark ({len(buying_sessions)} sessions):")
-            print(f"  Turn-1 Target Hit Rate: {hits / len(buying_sessions):.2%}")
-            print(f"  Median Candidate Set Size: {median_size}")
+            if candidate_sizes:
+                candidate_sizes.sort()
+                median_size = candidate_sizes[len(candidate_sizes) // 2]
+                hit_pct = (hits / len(buying_sessions)) * 100
+                print(
+                    f"Constraints: {num_constraints} | "
+                    f"Coverage: {hits}/{len(buying_sessions)} ({hit_pct:.2f}%) | "
+                    f"Median Candidate Set Size: {median_size}"
+                )
