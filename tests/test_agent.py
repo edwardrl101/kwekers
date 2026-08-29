@@ -65,6 +65,110 @@ class AgentShellTest(unittest.TestCase):
             second = agent.respond("second", "message", 2, 10)["recommendations"]
             self.assertEqual(first, second)
 
+    def test_freshness_avoids_repeats_across_normal_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=30), enable_dense=False
+            )
+            agent._route_bucket = None
+            agent._exact_route = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(30)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond(
+                "session",
+                "I'm looking for Shoes. A key requirement is: leather.",
+                1,
+                10,
+            )
+            second = agent.respond(
+                "session",
+                "For that, what matters is: soft.",
+                2,
+                10,
+            )
+            first_ids = {
+                item["parent_asin"] for item in first["recommendations"]
+            }
+            second_ids = {
+                item["parent_asin"] for item in second["recommendations"]
+            }
+
+            self.assertEqual(len(first_ids), 10)
+            self.assertEqual(len(second_ids), 10)
+            self.assertTrue(first_ids.isdisjoint(second_ids))
+            self.assertEqual(
+                agent._sessions["session"]["shown"], first_ids | second_ids
+            )
+
+    def test_override_clears_freshness_before_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=30), enable_dense=False
+            )
+            agent._route_bucket = None
+            agent._route_exact = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(30)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond(
+                "session",
+                "I'm looking for Shirts. Department: Womens",
+                1,
+                10,
+            )
+            agent.respond(
+                "session",
+                "For that, what matters is: color: black.",
+                2,
+                10,
+            )
+            override = agent.respond(
+                "session",
+                "Actually, ignore my earlier preference. What I need is: wool.",
+                3,
+                10,
+            )
+            first_ids = [item["parent_asin"] for item in first["recommendations"]]
+            override_ids = [
+                item["parent_asin"] for item in override["recommendations"]
+            ]
+
+            self.assertEqual(override_ids, first_ids)
+            self.assertEqual(agent._sessions["session"]["shown"], set(first_ids))
+
+    def test_random_fill_excludes_shown_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=25), enable_dense=False
+            )
+            excluded = {f"A{index:03d}" for index in range(10)}
+            session = {"seed_key": "freshness-test", "shown": excluded}
+
+            result = agent._random_fill(["A000", "A010"], session, 2)
+
+            self.assertEqual(len(result), 10)
+            self.assertEqual(len(set(result)), 10)
+            self.assertTrue(set(result).isdisjoint(excluded))
+            self.assertEqual(result[0], "A010")
+
+    def test_reset_initializes_independent_freshness_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            agent.reset("first", {})
+            agent.reset("second", {})
+
+            agent._sessions["first"]["shown"].add("A000")
+
+            self.assertEqual(agent._sessions["first"]["shown"], {"A000"})
+            self.assertEqual(agent._sessions["second"]["shown"], set())
+
     def test_route_adapters_delegate_and_preserve_scores(self) -> None:
         class FakeRoute:
             def __init__(self) -> None:
