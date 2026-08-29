@@ -42,10 +42,19 @@ class AgentShellTest(unittest.TestCase):
 
     def test_missing_dense_cache_never_triggers_an_automatic_build(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            agent = Agent(self._catalog(Path(directory)))
+            agent = Agent(self._catalog(Path(directory)), enable_dense=True)
 
             self.assertIsNone(agent._dense_route)
             self.assertIn("Dense cache not found", agent._route_errors["dense"])
+
+    def test_production_defaults_disable_dense(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)))
+
+            self.assertFalse(agent.enable_dense)
+            self.assertEqual(agent.dense_similarity_weight, 0.0)
+            self.assertIsNone(agent._dense_route)
+            self.assertNotIn("dense", agent._route_errors)
 
     def test_broken_route_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -315,7 +324,11 @@ class AgentShellTest(unittest.TestCase):
 
     def test_dense_evidence_can_promote_a_bm25_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                dense_similarity_weight=0.20,
+            )
             route_results = {
                 "bm25": [(f"A{index:03d}", 100.0 - index) for index in range(10)],
                 "exact": [],

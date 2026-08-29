@@ -13,7 +13,7 @@ ROUTE_CANDIDATE_LIMIT = 500
 RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
 EXACT_MATCH_BOOST = 0.35
 BUCKET_MATCH_BOOST = 0.10
-DENSE_SIMILARITY_WEIGHT = 0.20
+DENSE_SIMILARITY_WEIGHT = 0.0
 
 ScoredCandidate: TypeAlias = tuple[str, float]
 RouteResults: TypeAlias = dict[str, list[ScoredCandidate]]
@@ -27,7 +27,7 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
-        enable_dense: bool = True,
+        enable_dense: bool = False,
         enable_freshness: bool = True,
         exact_match_boost: float = EXACT_MATCH_BOOST,
         bucket_match_boost: float = BUCKET_MATCH_BOOST,
