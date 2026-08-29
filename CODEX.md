@@ -2,15 +2,14 @@
 
 This file is the durable context for continuing work on the Kwekers TechJam
 shopping-agent project. Read it before modifying retrieval, dialog behavior, or
-evaluation tooling. It records the state verified on 2026-08-29 against
-`main` commit `e5a94ec` after fetching `origin/main`.
+evaluation tooling. It records the state verified on 2026-08-29 through
+`main` commit `36c12ab`.
 
-> **Current-main integration warning:** the latest merge changed
-> `ExactRoute` from `query(text, limit)` to `exact_matches(constraints)`, but
-> `starter/agent.py` still calls the old common `query()` interface. Exact
-> evidence is therefore caught as a route failure and contributes nothing on
-> current `main`. The green unit suite does not detect this. Repair and measure
-> this adapter before treating the pre-merge `0.820121` score as current.
+> **Day 3 status:** exact multi-constraint intersections and cross-turn
+> freshness are connected and covered end to end. The six-way ablation selected
+> exact `0.35` + bucket `0.10` + BM25 with dense disabled. The production path
+> scores `0.877011` on all 200 public sessions. See
+> `docs/day3-ablation-report.md` for the complete evidence.
 
 ## 1. Objective and deliverable
 
@@ -121,20 +120,22 @@ new customer message
   -> update per-session SlotState
   -> retain category and all active constraints
   -> build cumulative retrieval query
-  -> run bucket, BM25, and dense routes; attempt exact
+  -> clear shown history when this message is an intent override
+  -> run bucket, exact, and BM25 routes
   -> take BM25's top 500 as the exclusive candidate pool
   -> normalize BM25 rank
-  -> add bucket and dense evidence; exact is currently empty due API mismatch
+  -> add exact and bucket evidence
   -> sort by fused score; BM25 rank breaks ties
+  -> exclude products already shown in this session
   -> return the first 10 valid unique IDs
-  -> deterministic random fill only if fewer than 10 exist
+  -> freshness-aware deterministic fill only if fewer than 10 exist
   -> ask `other`
 ```
 
 Routes are logically independent but currently execute sequentially, each
-inside its own `try/except`. One route failure cannot zero the response.
-That safety behavior masks the current exact-route incompatibility: evaluation
-continues instead of crashing, but silently loses the exact signal.
+inside its own `try/except`. One route failure cannot zero the response. Dense
+is disabled by default after the Day 3 ablation, so it is not initialized or
+queried in production.
 
 ### 4.1 Accumulated dialog context
 
@@ -190,26 +191,22 @@ assuming the new filter is already end-to-end.
 
 ### 4.3 Exact evidence
 
-Latest `src.exact.ExactRoute` indexes cleaned feature strings, `Key: Value`
-details, bare materials, and numeric prices. Its public retrieval method is now:
+`src.exact.ExactRoute` indexes cleaned feature strings, `Key: Value` details,
+bare materials, and numeric prices. Its public retrieval method is:
 
 ```python
-exact_matches(constraints: list[str]) -> list[str]
+query(text: str | list[str], limit: int = 200) -> list[tuple[str, float]]
 ```
 
 It handles material tokens, `budget around $X` with 15% tolerance, and an
-intersection over the non-empty constraint match sets.
+intersection over every active constraint. An unmatched constraint contributes
+an empty set, so it forces the entire intersection empty instead of being
+silently skipped. Results are sorted before applying `limit`, which makes large
+single-constraint sets deterministic across processes.
 
-`starter.Agent._route_exact()` has not been adapted. It still invokes
-`_query_route()`, which calls `route.query(text, limit=500)`. Since the merged
-`ExactRoute` has no `query()`, `_route_candidates()` catches `AttributeError`
-and records an empty exact result for that turn. The configured `+0.35` exact
-boost is therefore inactive on current main.
-
-The repair should pass `session["active_constraints"]` to `exact_matches()`,
-validate/deduplicate returned ASINs, cap at 500, and map them to
-`[(asin, 1.0), ...]`. Add a real integration test using `ExactRoute`, not only a
-fake object implementing the obsolete `query()` contract.
+`starter.Agent._route_exact()` passes `session["active_constraints"]` to
+`query()` in one call. A real `ExactRoute`-through-`Agent` test proves the
+intersection reaches `_fuse_bm25_pool()` and promotes matching BM25 candidates.
 
 ### 4.4 BM25 candidate generation
 
@@ -239,11 +236,13 @@ embedding shape 50,000 x 384
 approximately 40.4 MB on disk
 ```
 
-The cache is intentionally gitignored. Use the supplied cache; do not regenerate
-it during normal development or evaluation. `Agent` passes
-`build_if_missing=False`, so a missing or catalog-mismatched cache disables
-dense retrieval instead of starting an encode. Only
-`scripts/build_dense_cache.py` permits generation as a recovery operation.
+The cache is intentionally gitignored. Production `Agent` defaults to
+`enable_dense=False` and a dense weight of `0.0`, so it has no dense model or
+cache runtime dependency. Named ablation configurations can still enable the
+route. When enabled, `Agent` passes `build_if_missing=False`, so a missing or
+catalog-mismatched cache disables dense retrieval instead of starting an
+encode. Only `scripts/build_dense_cache.py` permits generation as a recovery
+operation.
 
 The model loader prefers local Hugging Face files first to avoid offline
 metadata retries. `requirements-dense.txt` pins:
@@ -265,41 +264,39 @@ Constants in `starter/agent.py`:
 ROUTE_CANDIDATE_LIMIT = 500
 EXACT_MATCH_BOOST = 0.35
 BUCKET_MATCH_BOOST = 0.10
-DENSE_SIMILARITY_WEIGHT = 0.20
+DENSE_SIMILARITY_WEIGHT = 0.0
 ```
 
-The intended configured formula for a BM25 candidate `i` is:
+The production formula for a BM25 candidate `i` is:
 
 ```text
 fused(i) = normalized_bm25_rank(i)
          + 0.35 * exact_match(i)
          + 0.10 * bucket_match(i)
-         + 0.20 * normalized_dense_score(i)
+         + 0.00 * normalized_dense_score(i)
 ```
 
 BM25 rank is mapped linearly from rank 1 to `1.0` and the last pool rank to
 `0.0`. Dense results are min-max normalized within the returned dense list.
 Original BM25 rank is the deterministic tie-breaker.
 
-On current main, `exact_match(i)` is always zero in end-to-end Agent execution
-because of the adapter mismatch described above.
-
 Do not sum raw route scores. BM25 uses tiered values around thousands, exact and
 bucket use `1.0`, and dense cosine is roughly in `[-1, 1]`; raw addition would
 make the largest numerical scale dominate regardless of signal quality.
 
-This is deliberately not equal-weight RRF. The weights are reasonable v1
-defaults, not systematically tuned values.
+This is deliberately not equal-weight RRF. Day 3 measured all three auxiliary
+terms independently. Exact and bucket were retained; dense was disabled.
 
 ### 4.7 Final recommendation selection
 
-Every turn recomputes retrieval and fusion from the cumulative active query and
-returns the current fused top 10. New constraints often change the list, but
-there is no cross-turn `shown` set. Products may repeat across turns.
+Every turn recomputes retrieval and fusion from the cumulative active query.
+Each session owns a `shown` set. Normal turns exclude previously recommended
+products from both routed selection and deterministic fill, then record the
+final ten. An intent-override message clears `shown` before selection so the
+unchanged target can be recommended after the evaluator blackout.
 
-Override constraint replacement is implemented, but `shown` clearing is not:
-there is no `shown` state to clear. Adding a deliberate freshness/reset policy
-is an outstanding Day-3 decision, not something already present.
+Override handling still demotes only the superseded preference; it does not
+wipe the category or unrelated active constraints.
 
 `top_k` is ignored intentionally; competition output is fixed at 10.
 
@@ -344,14 +341,27 @@ Full 200-session scenario results:
 | Intent override | 30 | 0.799179 | 0.900000 | 0.717262 | 4.300000 | 0.670000 |
 | Boundary | 10 | 0.816500 | 1.000000 | 0.515000 | 2.900000 | 0.810000 |
 
-The observed pre-merge wall-clock time for one full 200-session evaluator
-invocation was approximately 74 seconds with the supplied dense cache present.
+These are historical numbers. The Day 3 production configuration has current
+verified results:
 
-These numbers are a historical working floor, **not a verified score for
-`e5a94ec` current main**. A post-merge full run was attempted while preparing
-this handoff but was stopped after approximately four minutes without progress,
-so no replacement score was recorded. Re-run tune first after repairing the
-exact adapter, then use holdout only at the next meaningful checkpoint.
+| Split | TechnicalScore | Hit@10 | MRR | MTTC | Efficiency |
+|---|---:|---:|---:|---:|---:|
+| Tune, 140 | 0.867513 | 0.992857 | 0.662664 | 2.385714 | 0.861429 |
+| Holdout, 60 | 0.899171 | 1.000000 | 0.756124 | 2.383333 | 0.861667 |
+| All, 200 | **0.877011** | **0.995000** | **0.690702** | **2.385000** | **0.861500** |
+
+Full-set production scenario results:
+
+| Scenario | N | TechnicalScore | Hit@10 | MRR | MTTC | Efficiency |
+|---|---:|---:|---:|---:|---:|---:|
+| Buying | 80 | 0.860433 | 0.987500 | 0.618110 | 1.937500 | 0.906250 |
+| Browsing | 80 | 0.891164 | 1.000000 | 0.718046 | 2.212500 | 0.878750 |
+| Intent override | 30 | 0.893274 | 1.000000 | 0.833135 | 3.833333 | 0.716667 |
+| Boundary | 10 | 0.847619 | 1.000000 | 0.625397 | 3.000000 | 0.800000 |
+
+See `docs/day3-ablation-report.md` for all six configurations and decision
+details. A timed no-dense production run over all 200 sessions took 30.599
+seconds in the Day 3 development environment.
 
 Treat the public set as a training signal, not proof of private-set quality.
 Tune on the 140 sessions and inspect the 60-session holdout only at meaningful
@@ -371,9 +381,9 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The latest-main verified count is 27 passing tests. This suite currently has a
-coverage hole: it does not instantiate the real merged `ExactRoute` through
-`Agent`, so it passes despite exact evidence being disconnected.
+The current verified count is 39 passing tests, including real
+`ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
+override-reset, fallback-exclusion, and production-default coverage.
 
 Run tune, holdout, or all sessions:
 
@@ -426,7 +436,7 @@ At the time this handoff was written, `data/SHA256SUMS` and `runs/` were
 untracked. Do not automatically delete or commit them; determine ownership and
 the team's intended run-log policy first.
 
-## 8. Completed checklist and post-merge status
+## 8. Completed checklist and Day 3 status
 
 The original Member-1/Edward pipeline checklist was completed and measured on
 the feature branch:
@@ -446,10 +456,18 @@ the feature branch:
 - tune, holdout, and full-set checkpoints are reported;
 - 26 tests passed at that checkpoint.
 
-After PR merge `e5a94ec`, main has 27 passing tests and new teammate bucket and
-exact implementations, but exact is no longer wired through Agent. Therefore,
-do not report “all four routes connected” for current main until the adapter is
-fixed and an end-to-end test proves it.
+Day 3 additionally completed and measured:
+
+- exact `query(str | list[str])` integration with AND semantics;
+- unmatched-constraint enforcement and deterministic exact limiting;
+- a real ExactRoute-through-Agent integration test;
+- cross-turn `shown` exclusion and override reset;
+- freshness-aware deterministic fill;
+- named six-way ablation configurations;
+- tune and holdout finalist checks;
+- a full 200-session ablation and production report;
+- dense removal from the production default after it lost on tune, holdout, and
+  the full set.
 
 Important commits:
 
@@ -458,73 +476,65 @@ Important commits:
 b5637f9 feat: add BM25-base retrieval fusion
 f3efba4 final feature-branch integration before PR merge
 e5a94ec latest origin/main merge audited for this updated handoff
+d8a49e2 cherry-pick Member 3 exact query and silent-skip fix
+38285d8 fix: intersect exact constraints through agent
+749db1a feat: add cross-turn recommendation freshness
+982b8dd feat: add reproducible day3 ablation configs
+e848d8c fix: make exact candidate limiting deterministic
+a7d46d5 perf: ship measured no-dense default
+36c12ab docs: record day3 ablation decisions
 ```
 
 ## 9. Known limitations and open decisions
 
-The first two items are integration work introduced/exposed by the latest main
-merge. The remaining items are optimization work:
+Remaining work is optimization and hardening, not a known production plumbing
+break:
 
-1. **Exact adapter is broken on main.** `ExactRoute.exact_matches()` replaced
-   `query()`, but Agent still calls `query()`. Failure isolation hides the error
-   and exact contributes an empty list.
-2. **New bucket filter is not wired.** `filter_by_category()` exists and has
+1. **Bucket hard filter is not wired.** `filter_by_category()` exists and has
    safety tests, but Agent still uses category membership only as a `+0.10`
-   boost. Decide whether filtering precedes fusion or remains optional evidence.
-3. **No candidate rescue.** Exact or dense results outside BM25's top 500 cannot
+   boost. Its separate experiment did not improve ranking, so it was deliberately
+   left out of production.
+2. **No candidate rescue.** Exact results outside BM25's top 500 cannot
    enter the final pool. Measure BM25 recall@500 before changing this.
-4. **Mostly positive fusion.** Exact, bucket, and dense promote matches. There is
+3. **Mostly positive fusion.** Exact and bucket promote matches. There is
    no explicit hard-constraint violation penalty; nonmatches only move down
    relatively when another product is promoted.
-5. **Untuned weights.** `0.35`, `0.10`, and `0.20` are initial values. Tune only
-   on the 140-session split and guard against overfitting.
-6. **No shown/freshness policy.** Recommendations can repeat between turns.
-   Decide whether to exclude shown IDs normally and whether to clear that set on
-   override. This can materially affect Day-3 performance.
-7. **QuestionPolicy disconnected.** Always asking `other` is a strong floor but
+4. **Weights are ablated, not swept.** Exact `0.35` and bucket `0.10` survived
+   component ablation, but their magnitudes have not been systematically swept.
+5. **QuestionPolicy disconnected.** Always asking `other` is a strong floor but
    does not use candidate-pool information gain after constraints are exhausted.
-8. **Routes are sequential.** Concurrency could reduce latency after correctness
+6. **Routes are sequential.** Concurrency could reduce latency after correctness
    and diagnostics are stable.
-9. **User profile is unused for ranking.** It currently contributes only to the
+7. **User profile is unused for ranking.** It currently contributes only to the
    deterministic fallback seed.
-10. **Dense normalization is simplistic.** Min-max normalization makes the worst
-   returned dense candidate equal to zero and can be sensitive to score range.
-11. **NgramRoute is unused.** `src.retrieval.NgramRoute` exists for fuzzy and
-    truncation-robust matching but is not part of the current Agent.
-12. **Limited observability.** Route constructor errors are stored in
-    `Agent._route_errors`, but per-candidate route ranks and fused scores are not
-    exposed by a trace tool.
-13. **Historical remaining misses.** The pre-merge full-set HitRate@10 was 0.945,
-    leaving 11 public misses. Re-establish the current-main score before using
-    that miss list as the next tuning set.
+8. **NgramRoute is unused.** `src.retrieval.NgramRoute` exists for fuzzy and
+   truncation-robust matching but is not part of the current Agent.
+9. **Limited observability.** Route constructor errors are stored in
+   `Agent._route_errors`, but per-candidate route ranks and fused scores are not
+   exposed by a trace tool.
+10. **One remaining public miss.** Production HitRate@10 is `0.995`; classify
+    that miss before changing candidate generation or ranking.
 
 ## 10. Recommended next sequence
 
 Keep changes measurable and commit every major milestone, per user request.
 
-1. Adapt `Agent._route_exact()` to `ExactRoute.exact_matches()` and add a real
-   integration test proving exact evidence reaches `_fuse_bm25_pool()`.
-2. Decide how `BucketRoute.filter_by_category()` composes with the existing
-   positive bucket boost; add an Agent integration test for the chosen behavior.
-3. Run tune and record a post-merge baseline. Run holdout only after the
-   integration repair is stable.
-4. Add a read-only diagnostic/trace mode that reports, for one session and turn:
+1. Add a read-only diagnostic/trace mode that reports, for one session and turn:
    cumulative slots, route ranks/scores, normalized features, fused score, and
    whether the target was absent from BM25 top 500 or merely reranked poorly.
-5. Classify current misses into candidate-generation, parsing/override,
-   fusion, and question-strategy failures.
-6. Measure BM25 recall@500 and conditional reranking success. This decides
+2. Classify the remaining miss as candidate-generation, parsing/override,
+   fusion, or question-strategy failure.
+3. Measure BM25 recall@500 and conditional reranking success. This decides
    whether candidate rescue is worth adding.
-7. Add candidate-pool attribute statistics and connect `QuestionPolicy` after
+4. Add candidate-pool attribute statistics and connect `QuestionPolicy` after
    the current `other` strategy drains useful constraints.
-8. Add explicit, conservative constraint-violation features. Prefer demotion to
+5. Add explicit, conservative constraint-violation features. Prefer demotion to
    hard filtering until parser precision is proven.
-9. Tune fusion weights on tune only; use holdout only for checkpoints.
-10. Evaluate a bounded rescue lane such as BM25 top 500 plus high-confidence
-   exact and a small number of top dense candidates.
-11. Consider cross-turn shown/freshness behavior, including explicit clearing on
-   override, and measure it independently.
-12. Optimize latency or route concurrency only after ranking behavior is
+6. Sweep exact and bucket weights on tune only; use holdout only for meaningful
+   checkpoints.
+7. Evaluate a bounded rescue lane such as BM25 top 500 plus a small number of
+   high-confidence exact candidates.
+8. Optimize latency or route concurrency only after ranking behavior is
    observable and stable.
 
 Useful decomposition:
@@ -547,9 +557,7 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 - The repository currently ignores the entire `scripts/` directory. Existing
   tracked scripts remain tracked, but a new script may require an intentional
   `git add -f`; review it carefully before doing so.
-- Run the 27-test suite and `git diff --check` before each major commit. Add the
-  missing real ExactRoute-through-Agent integration test before relying on green
-  tests as proof that every route is wired.
+- Run the 39-test suite and `git diff --check` before each major commit.
 - Commit every major change with a focused message, as explicitly requested by
   the user. Do not automatically push unless asked.
 - Avoid committing `data/SHA256SUMS` or `runs/` until their ownership/policy is
@@ -558,18 +566,18 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 
 ## 12. Definition of the intended milestone
 
-The first pipeline milestone was implemented and measured before the latest
-route-API merge:
+The Day 3 production milestone is implemented and measured:
 
 ```text
 accumulated intent
   -> BM25 top 500
-  -> exact/category/dense evidence
+  -> exact/category evidence
   -> normalized interpretable fusion
+  -> freshness and override reset
   -> current top 10
 ```
 
-The next agent should preserve this working floor and improve one measured
-failure mode at a time. On current main, first restore the exact adapter so the
-effective flow again matches this diagram; until then it is BM25 plus category
-and dense evidence only.
+The next agent should preserve the `0.877011` working floor and improve one
+measured failure mode at a time. Dense, the bucket hard filter, and BM25-only
+were all measured; do not reintroduce them as production changes without new
+evidence.

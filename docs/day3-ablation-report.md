@@ -29,6 +29,11 @@ locally in `runs/runs.csv`.
 
 The final verification suite contains 39 passing tests.
 
+A timed production run over all 200 sessions took **30.599 seconds** in the
+Day 3 development environment. This is less than half the historical
+approximately 74-second dense-backed run, although wall time remains
+machine-dependent.
+
 ## Split checkpoints
 
 The two finalists were full freshness and freshness without dense.
