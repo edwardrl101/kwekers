@@ -27,7 +27,10 @@ locally in `runs/runs.csv`.
 | `dc7b5fd` | Sort exact intersections before limiting to eliminate process-dependent subsets |
 | `f9f1095` | Promote the measured no-dense configuration to production defaults |
 
-The final verification suite contains 39 passing tests.
+The Day 3 implementation introduced and verified a 39-test suite. After the
+commit stack was moved onto refreshed `origin/main`, the combined feature branch
+contains **48 passing tests**, including nine inherited near-duplicate utility
+tests.
 
 A timed production run over all 200 sessions took **30.599 seconds** in the
 Day 3 development environment. This is less than half the historical

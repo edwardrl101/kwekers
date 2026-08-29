@@ -381,9 +381,11 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The current verified count is 39 passing tests, including real
+The current combined branch has 48 passing tests: the 39 route, Agent, dialog,
+bucket, evaluator, and exact tests from the Day 3 work plus nine near-duplicate
+utility tests inherited from `origin/main`. Coverage includes real
 `ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
-override-reset, fallback-exclusion, and production-default coverage.
+override-reset, fallback-exclusion, and production defaults.
 
 Run tune, holdout, or all sessions:
 
@@ -559,7 +561,7 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 - The repository currently ignores the entire `scripts/` directory. Existing
   tracked scripts remain tracked, but a new script may require an intentional
   `git add -f`; review it carefully before doing so.
-- Run the 39-test suite and `git diff --check` before each major commit.
+- Run the 48-test suite and `git diff --check` before each major commit.
 - Commit every major change with a focused message, as explicitly requested by
   the user. Do not automatically push unless asked.
 - Avoid committing `data/SHA256SUMS` or `runs/` until their ownership/policy is
