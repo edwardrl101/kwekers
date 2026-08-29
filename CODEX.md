@@ -2,8 +2,8 @@
 
 This file is the durable context for continuing work on the Kwekers TechJam
 shopping-agent project. Read it before modifying retrieval, dialog behavior, or
-evaluation tooling. It records the state verified on 2026-08-29 through
-`main` commit `36c12ab`.
+evaluation tooling. It records the state verified on 2026-08-29 on
+`feat/route-integration`, based on `origin/main` commit `08f2a78`.
 
 > **Day 3 status:** exact multi-constraint intersections and cross-turn
 > freshness are connected and covered end to end. The six-way ablation selected
@@ -476,13 +476,15 @@ Important commits:
 b5637f9 feat: add BM25-base retrieval fusion
 f3efba4 final feature-branch integration before PR merge
 e5a94ec latest origin/main merge audited for this updated handoff
-d8a49e2 cherry-pick Member 3 exact query and silent-skip fix
-38285d8 fix: intersect exact constraints through agent
-749db1a feat: add cross-turn recommendation freshness
-982b8dd feat: add reproducible day3 ablation configs
-e848d8c fix: make exact candidate limiting deterministic
-a7d46d5 perf: ship measured no-dense default
-36c12ab docs: record day3 ablation decisions
+a7dc2aa cherry-pick Member 3 exact query and silent-skip fix
+cd91365 fix: intersect exact constraints through agent
+534dbba feat: add cross-turn recommendation freshness
+071cf76 feat: add reproducible day3 ablation configs
+dc7b5fd fix: make exact candidate limiting deterministic
+f9f1095 perf: ship measured no-dense default
+1730895 docs: record day3 ablation decisions
+d405b34 docs: refresh handoff for day3 production
+8158f22 docs: add exact accumulation diagnostics
 ```
 
 ## 9. Known limitations and open decisions

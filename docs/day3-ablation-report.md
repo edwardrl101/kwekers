@@ -20,12 +20,12 @@ locally in `runs/runs.csv`.
 
 | Commit | Milestone |
 |---|---|
-| `d8a49e2` | Cherry-pick Member 3's ExactRoute `query()` and unmatched-constraint fix |
-| `38285d8` | Pass all active constraints through Agent in one exact query; add real integration coverage |
-| `749db1a` | Add cross-turn freshness and override reset |
-| `982b8dd` | Add named, reproducible Day 3 ablation configurations |
-| `e848d8c` | Sort exact intersections before limiting to eliminate process-dependent subsets |
-| `a7d46d5` | Promote the measured no-dense configuration to production defaults |
+| `a7dc2aa` | Cherry-pick Member 3's ExactRoute `query()` and unmatched-constraint fix |
+| `cd91365` | Pass all active constraints through Agent in one exact query; add real integration coverage |
+| `534dbba` | Add cross-turn freshness and override reset |
+| `071cf76` | Add named, reproducible Day 3 ablation configurations |
+| `dc7b5fd` | Sort exact intersections before limiting to eliminate process-dependent subsets |
+| `f9f1095` | Promote the measured no-dense configuration to production defaults |
 
 The final verification suite contains 39 passing tests.
 

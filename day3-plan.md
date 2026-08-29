@@ -59,7 +59,7 @@ non-null question attribute.
 
 The contradiction has been resolved and repaired in the current checkout:
 
-- Member 3's `query()` implementation was cherry-picked as `d8a49e2`.
+- Member 3's `query()` implementation was cherry-picked as `a7dc2aa`.
 - `starter/agent.py::_route_exact()` now passes all active constraints to
   `query()` in one call, producing an AND intersection.
 - A real `ExactRoute`-through-`Agent` test proves that exact evidence reaches
@@ -70,12 +70,12 @@ The contradiction has been resolved and repaired in the current checkout:
   process-dependent candidate subsets.
 
 Member 3's update was cherry-picked from `origin/vigo-branch` as local commit
-`d8a49e2` (source commit `88fcb79`). The checked-out `src/exact.py` now provides
+`a7dc2aa` (source commit `88fcb79`). The checked-out `src/exact.py` now provides
 `query()` and natively intersects a list of constraints. A direct smoke check
 confirmed that two constraints produce their intersection and an unmatched
 active constraint produces no candidates. The Agent adapter and end-to-end
-coverage were completed in `38285d8`; deterministic exact limiting was added
-in `e848d8c`.
+coverage were completed in `cd91365`; deterministic exact limiting was added
+in `dc7b5fd`.
 
 The intended Member 1 adapter is:
 
@@ -307,4 +307,4 @@ limiting was added. Full details are in `docs/day3-ablation-report.md`.
 | 5 | 0 | 0.10 | 0.20 | Yes | 0.830052 | 0.995 | 0.535506 | 2.405 | Reject: exact is the strongest MRR signal |
 | 6 | 0 | 0 | 0 | Yes | 0.862811 | 0.995 | 0.648038 | 2.455 | Keep only as a simple fallback/control |
 
-Production defaults were changed to configuration 3 in `a7d46d5`.
+Production defaults were changed to configuration 3 in `f9f1095`.
