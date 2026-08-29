@@ -17,6 +17,34 @@ from starter.agent import Agent  # noqa: E402
 
 
 SCENARIOS = ("buying", "browsing", "intent_override", "boundary")
+ABLATION_CONFIGS: dict[str, dict[str, bool | float]] = {
+    "current": {
+        "enable_freshness": False,
+    },
+    "freshness": {
+        "enable_freshness": True,
+    },
+    "no-dense": {
+        "enable_freshness": True,
+        "enable_dense": False,
+        "dense_similarity_weight": 0.0,
+    },
+    "no-bucket": {
+        "enable_freshness": True,
+        "bucket_match_boost": 0.0,
+    },
+    "no-exact": {
+        "enable_freshness": True,
+        "exact_match_boost": 0.0,
+    },
+    "bm25-only": {
+        "enable_freshness": True,
+        "enable_dense": False,
+        "exact_match_boost": 0.0,
+        "bucket_match_boost": 0.0,
+        "dense_similarity_weight": 0.0,
+    },
+}
 
 
 def _score_fields(metrics: dict) -> dict[str, float | None]:
@@ -129,18 +157,34 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--runs", type=Path, default=ROOT / "runs" / "runs.csv")
     parser.add_argument("--label", default="day1-random-fill-v1")
+    parser.add_argument(
+        "--ablation-config",
+        choices=tuple(ABLATION_CONFIGS),
+        help="Apply one named Day 3 fusion/freshness configuration",
+    )
     args = parser.parse_args()
 
     samples = _select_samples(load_jsonl(args.dataset), args.split, args.split_file)
     if not samples:
         parser.error(f"The {args.split!r} split contains no samples")
     catalog_ids, categories, products = catalog_index(args.catalog)
-    result = evaluate(Agent(args.catalog), samples, catalog_ids, categories, products)
+    agent_options = (
+        ABLATION_CONFIGS[args.ablation_config] if args.ablation_config else {}
+    )
+    result = evaluate(
+        Agent(args.catalog, **agent_options),
+        samples,
+        catalog_ids,
+        categories,
+        products,
+    )
 
     output = args.output or ROOT / f"results_{args.split}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     _print_metrics(result, args.split)
+    if args.ablation_config:
+        print(f"Ablation config: {args.ablation_config} {agent_options}")
     _append_run(args.runs, _csv_row(result, args.split, args.label))
     print(f"\nWrote results: {output}")
     print(f"Appended run:  {args.runs}")

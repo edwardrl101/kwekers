@@ -28,9 +28,17 @@ class Agent:
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
         enable_dense: bool = True,
+        enable_freshness: bool = True,
+        exact_match_boost: float = EXACT_MATCH_BOOST,
+        bucket_match_boost: float = BUCKET_MATCH_BOOST,
+        dense_similarity_weight: float = DENSE_SIMILARITY_WEIGHT,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.enable_dense = enable_dense
+        self.enable_freshness = enable_freshness
+        self.exact_match_boost = float(exact_match_boost)
+        self.bucket_match_boost = float(bucket_match_boost)
+        self.dense_similarity_weight = float(dense_similarity_weight)
         self.dense_cache_path = self.catalog_path.with_name("dense_cache.npz")
         self._catalog = self._load_catalog()
         self._catalog_ids = list(self._catalog)
@@ -254,10 +262,10 @@ class Agent:
         for rank, (parent_asin, _raw_bm25_score) in enumerate(bm25_pool, start=1):
             score = self._normalize_bm25_rank(rank, candidate_count)
             if parent_asin in exact_ids:
-                score += EXACT_MATCH_BOOST
+                score += self.exact_match_boost
             if parent_asin in bucket_ids:
-                score += BUCKET_MATCH_BOOST
-            score += DENSE_SIMILARITY_WEIGHT * dense_scores.get(parent_asin, 0.0)
+                score += self.bucket_match_boost
+            score += self.dense_similarity_weight * dense_scores.get(parent_asin, 0.0)
             fused.append((parent_asin, score, rank))
 
         # Original BM25 rank is the deterministic tie-breaker.
@@ -308,7 +316,9 @@ class Agent:
         result: list[str] = []
         seen: set[str] = set()
         shown = session.get("shown", set()) if isinstance(session, dict) else set()
-        excluded = shown if isinstance(shown, set) else set()
+        excluded = (
+            shown if self.enable_freshness and isinstance(shown, set) else set()
+        )
         for parent_asin in candidates:
             if (
                 parent_asin in self._catalog_id_set
@@ -383,14 +393,15 @@ class Agent:
             if not isinstance(shown, set):
                 shown = set()
                 session["shown"] = shown
-            if self._is_override_message(safe_message):
+            if self.enable_freshness and self._is_override_message(safe_message):
                 shown.clear()
             route_results = self._route_candidates(
                 session, retrieval_query, safe_turn
             )
             routed_ids = self._fuse_bm25_pool(route_results)
             parent_asins = self._random_fill(routed_ids, session, safe_turn)
-            shown.update(parent_asins)
+            if self.enable_freshness:
+                shown.update(parent_asins)
             slot_state = session.get("slot_state")
             if slot_state is not None:
                 try:

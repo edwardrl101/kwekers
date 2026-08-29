@@ -169,6 +169,27 @@ class AgentShellTest(unittest.TestCase):
             self.assertEqual(agent._sessions["first"]["shown"], {"A000"})
             self.assertEqual(agent._sessions["second"]["shown"], set())
 
+    def test_freshness_can_be_disabled_for_ablation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                enable_freshness=False,
+            )
+            agent._route_bucket = None
+            agent._route_exact = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(20)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond("session", "query", 1, 10)["recommendations"]
+            second = agent.respond("session", "query", 2, 10)["recommendations"]
+
+            self.assertEqual(first, second)
+            self.assertEqual(agent._sessions["session"]["shown"], set())
+
     def test_route_adapters_delegate_and_preserve_scores(self) -> None:
         class FakeRoute:
             def __init__(self) -> None:
@@ -306,6 +327,27 @@ class AgentShellTest(unittest.TestCase):
 
             self.assertLess(fused.index("A002"), 2)
             self.assertNotEqual(fused, [f"A{index:03d}" for index in range(10)])
+
+    def test_zero_auxiliary_weights_preserve_bm25_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                exact_match_boost=0.0,
+                bucket_match_boost=0.0,
+                dense_similarity_weight=0.0,
+            )
+            bm25 = [(f"A{index:03d}", 100.0 - index) for index in range(10)]
+            route_results = {
+                "bm25": bm25,
+                "exact": [("A009", 1.0)],
+                "bucket": [("A008", 1.0)],
+                "dense": [("A007", 0.99), ("A000", 0.01)],
+            }
+
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertEqual(fused, [parent_asin for parent_asin, _score in bm25])
 
     def test_respond_builds_an_accumulated_query_across_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
