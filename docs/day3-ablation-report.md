@@ -34,6 +34,24 @@ Day 3 development environment. This is less than half the historical
 approximately 74-second dense-backed run, although wall time remains
 machine-dependent.
 
+## Exact-set diagnostics
+
+The checked-in `src/exact.py` accumulation benchmark was run against the 80
+buying-session targets. It intersects the first one through four indexed target
+feature constraints, so this is a route precision/coverage diagnostic rather
+than a reconstruction of the evaluator's disclosure order.
+
+| Accumulated constraints | Target coverage | Median candidate set |
+|---:|---:|---:|
+| 1 | 80/80 (100%) | 54 |
+| 2 | 80/80 (100%) | 4 |
+| 3 | 80/80 (100%) | 1 |
+| 4 | 80/80 (100%) | 1 |
+
+The result supports the AND integration: additional compatible constraints
+rapidly turn broad exact evidence into a high-precision set without losing the
+target in this benchmark.
+
 ## Split checkpoints
 
 The two finalists were full freshness and freshness without dense.
