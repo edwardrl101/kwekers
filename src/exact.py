@@ -129,7 +129,7 @@ class ExactRoute:
 
         # Intersect matching candidate sets across all constraints
         intersection = set.intersection(*constraint_sets)
-        return list(intersection)
+        return sorted(intersection)
 
     def query(self, text: str | list[str], limit: int = 200) -> list[tuple[str, float]]:
         """
