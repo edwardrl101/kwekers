@@ -176,6 +176,7 @@ def call(prompt: str, system: str = "", max_tokens: int = 200) -> str | None:
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": 0,
+            "reasoning": {"effort": "none", "exclude": True},
             "stream": False,
         },
         ensure_ascii=False,

@@ -82,6 +82,7 @@ class OpenRouterClientTest(unittest.TestCase):
         sent = json.loads(request.data.decode("utf-8"))
         self.assertEqual(sent["model"], "vendor/model:free")
         self.assertEqual(sent["temperature"], 0)
+        self.assertEqual(sent["reasoning"], {"effort": "none", "exclude": True})
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 3.0)
         self.assertEqual(llm.telemetry()[0]["outcome"], "success")
 
