@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import metadata as importlib_metadata
 import unittest
 from unittest.mock import patch
 
@@ -8,7 +9,6 @@ from scripts.eval_cv import (
     CONFIGS,
     _dependency_versions,
     aggregate_fold_results,
-    importlib_metadata,
     summarize_sessions,
 )
 from starter.agent import BUCKET_MATCH_BOOST, DENSE_SIMILARITY_WEIGHT, EXACT_MATCH_BOOST
