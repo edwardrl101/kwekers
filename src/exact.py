@@ -5,8 +5,8 @@ from pathlib import Path
 
 # Common materials extracted by the simulator's intent_card()
 MATERIALS = {
-    "cotton", "polyester", "nylon", "leather", "wool", "silk", 
-    "canvas", "denim", "spandex", "linen", "velvet", "fleece", 
+    "cotton", "polyester", "nylon", "leather", "wool", "silk",
+    "canvas", "denim", "spandex", "linen", "velvet", "fleece",
     "suede", "mesh", "cashmere", "rayon", "satin", "acrylic"
 }
 
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                 target = sample["ground_truth"]["parent_asin"]
                 prod = catalog.get(target, {})
                 features = prod.get("features", [])
-                
+
                 # Intersect up to N accumulated feature constraints
                 test_constraints = features[:num_constraints]
                 if test_constraints:

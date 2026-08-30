@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 BUCKET_BANDS = ("<=10", "11-50", "51-500", ">500")
-BM25_POOL_LIMIT = 500 #receives up to 500 BM25 candidates 
+BM25_POOL_LIMIT = 500 #receives up to 500 BM25 candidates
 _SEARCH_FIELDS = ("title", "features", "details", "description", "categories", "store") #searchable metadata
 _MATERIAL_RE = re.compile(r"\b(cotton|polyester|nylon|leather|wool|spandex|silk|rayon|fabric)\b", re.I)
 _COLOR_RE = re.compile(r"\b(black|white|blue|red|pink|green|brown|gray|grey|purple|yellow|orange)\b", re.I)
