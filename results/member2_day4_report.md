@@ -210,18 +210,18 @@ Only `Agent.respond()` is included in per-turn latency; Agent/catalog constructi
 
 | Level | Turns | Mean ms | p50 ms | p95 ms | Wall seconds |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 412 | 34.086 | 32.063 | 69.397 | 14.113 |
-| 1 | 681 | 36.965 | 36.471 | 64.243 | 25.285 |
-| 2 | 1105 | 22.409 | 18.867 | 43.668 | 24.900 |
-| 3 | 1182 | 22.945 | 19.093 | 43.729 | 27.311 |
-| 4 | 1279 | 21.559 | 18.325 | 42.508 | 27.723 |
+| 0 | 412 | 35.024 | 32.790 | 74.007 | 14.505 |
+| 1 | 681 | 35.784 | 35.335 | 63.609 | 24.472 |
+| 2 | 1105 | 21.396 | 17.658 | 42.051 | 23.733 |
+| 3 | 1182 | 21.753 | 17.690 | 42.502 | 25.859 |
+| 4 | 1279 | 22.005 | 18.645 | 44.227 | 28.301 |
 
 ## LLM on/off cost
 
 | Mode | Available | Score | Model | Calls | Input tokens | Output tokens | p50 ms | p95 ms | Cost/session | Cost/1M sessions |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
 | llm_off | yes | 0.891111 | none | 0 | 0 | 0 | 0.0 | 0.0 | 0.0 | 0.0 |
-| llm_on | not run; pass --measure-llm-on | not measured | cohere/north-mini-code:free | not measured | not measured | not measured | not measured | not measured | not computed | not computed |
+| llm_on_level_4 | yes | 0.423564 | cohere/north-mini-code:free | 484 | 3410 | 295 | 64.03016650438076 | 444.6235587973202 | not computed | not computed |
 
 LLM-off is always measured with explicit false Agent flags and a reset telemetry state. LLM-on is only run when `--measure-llm-on` is supplied; this prevents an ordinary robustness run from making network calls. Token-price projections remain `not computed` unless explicit prices are supplied.
 
