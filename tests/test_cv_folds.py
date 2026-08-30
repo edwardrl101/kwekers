@@ -45,6 +45,44 @@ class CrossValidationFoldTest(unittest.TestCase):
         }
         self.assertEqual(fold_by_sample["sample_00"], fold_by_sample["sample_01"])
 
+    def test_distinct_target_title_families_respect_variant_sensitivity(self) -> None:
+        samples = fixture_samples()
+        titles = {f"ASIN_{index:02d}": f"Distinct product title {index}" for index in range(20)}
+        titles.update(
+            {
+                "ASIN_00": (
+                    "Classic cotton crew neck short sleeve casual everyday lightweight "
+                    "breathable soft durable comfortable stretch relaxed fit travel work "
+                    "lounge shirt black women medium spring summer basics"
+                ),
+                "ASIN_01": (
+                    "Classic cotton crew neck short sleeve casual everyday lightweight "
+                    "breathable soft durable comfortable stretch relaxed fit travel work "
+                    "lounge shirt black women medium summer spring basics"
+                ),
+                "ASIN_02": (
+                    "Classic cotton crew neck short sleeve casual everyday lightweight "
+                    "breathable soft durable comfortable stretch relaxed fit travel work "
+                    "lounge shirt black women medium spring summer basics"
+                ),
+                "ASIN_03": (
+                    "Classic cotton crew neck short sleeve casual everyday lightweight "
+                    "breathable soft durable comfortable stretch relaxed fit travel work "
+                    "lounge shirt black women large spring summer basics"
+                ),
+            }
+        )
+        manifest = build_manifest(samples, titles)
+
+        self.assertEqual(
+            manifest["sample_groups"]["sample_00"],
+            manifest["sample_groups"]["sample_01"],
+        )
+        self.assertNotEqual(
+            manifest["sample_groups"]["sample_02"],
+            manifest["sample_groups"]["sample_03"],
+        )
+
     def test_duplicate_sample_id_fails_loudly(self) -> None:
         samples = fixture_samples()
         samples[1]["sample_id"] = samples[0]["sample_id"]
