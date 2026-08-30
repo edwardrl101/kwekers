@@ -61,14 +61,14 @@ class CrossValidationFoldTest(unittest.TestCase):
                     "lounge shirt black women medium summer spring basics"
                 ),
                 "ASIN_02": (
-                    "Classic cotton crew neck short sleeve casual everyday lightweight "
-                    "breathable soft durable comfortable stretch relaxed fit travel work "
-                    "lounge shirt black women medium spring summer basics"
+                    "Performance running sneaker breathable cushioned lightweight durable "
+                    "supportive responsive flexible stable comfortable everyday training "
+                    "walking gym road fitness athletic shoe blue women medium spring summer"
                 ),
                 "ASIN_03": (
-                    "Classic cotton crew neck short sleeve casual everyday lightweight "
-                    "breathable soft durable comfortable stretch relaxed fit travel work "
-                    "lounge shirt black women large spring summer basics"
+                    "Performance running sneaker breathable cushioned lightweight durable "
+                    "supportive responsive flexible stable comfortable everyday training "
+                    "walking gym road fitness athletic shoe blue women large spring summer"
                 ),
             }
         )
