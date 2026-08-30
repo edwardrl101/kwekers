@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from scripts.eval import ABLATION_CONFIGS
-from scripts.eval_cv import CONFIGS, aggregate_fold_results, summarize_sessions
+from scripts.eval_cv import (
+    CONFIGS,
+    _dependency_versions,
+    aggregate_fold_results,
+    importlib_metadata,
+    summarize_sessions,
+)
 from starter.agent import BUCKET_MATCH_BOOST, DENSE_SIMILARITY_WEIGHT, EXACT_MATCH_BOOST
 
 
@@ -35,6 +42,24 @@ class CrossValidationEvaluationTest(unittest.TestCase):
         self.assertEqual(summary["out_of_fold"]["sample_count"], 2)
         self.assertEqual(summary["out_of_fold"]["hit_rate_at_10"], 0.5)
         self.assertIn("technical_score_population_sd", summary)
+
+    def test_dependency_versions_include_reproducibility_packages(self) -> None:
+        versions = {"numpy": "2.0.0", "scikit-learn": "1.6.0"}
+
+        def fake_version(package: str) -> str:
+            if package == "sentence-transformers":
+                raise importlib_metadata.PackageNotFoundError
+            return versions[package]
+
+        with patch("scripts.eval_cv.importlib_metadata.version", side_effect=fake_version):
+            self.assertEqual(
+                _dependency_versions(),
+                {
+                    "numpy": "2.0.0",
+                    "scikit-learn": "1.6.0",
+                    "sentence-transformers": None,
+                },
+            )
 
 
 if __name__ == "__main__":

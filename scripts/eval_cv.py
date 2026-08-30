@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from importlib import metadata as importlib_metadata
 import json
 import platform
 import statistics
@@ -92,6 +93,16 @@ def _git_metadata() -> dict[str, str | None]:
             return None
 
     return {"commit": command("rev-parse", "HEAD"), "branch": command("branch", "--show-current")}
+
+
+def _dependency_versions() -> dict[str, str | None]:
+    versions: dict[str, str | None] = {}
+    for package in ("numpy", "scikit-learn", "sentence-transformers"):
+        try:
+            versions[package] = importlib_metadata.version(package)
+        except importlib_metadata.PackageNotFoundError:
+            versions[package] = None
+    return versions
 
 
 def summarize_sessions(sessions: list[dict]) -> dict:
@@ -225,10 +236,12 @@ def main() -> None:
         "metadata": {
             "git": _git_metadata(),
             "python": sys.version,
+            "dependency_versions": _dependency_versions(),
             "platform": platform.platform(),
             "dataset_sha256": _sha256(args.dataset),
             "catalog_sha256": _sha256(args.catalog),
             "manifest_sha256": manifest["manifest_sha256"],
+            "seed": manifest["seed"],
             "runtime_seconds": round(time.perf_counter() - started, 6),
         },
         "folds": fold_results,
