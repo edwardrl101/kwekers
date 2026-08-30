@@ -52,6 +52,11 @@ class ExactRouteTest(unittest.TestCase):
     def test_all_unindexed_constraints_return_no_exact_evidence(self) -> None:
         self.assertEqual(self.route.exact_matches(["color: chartreuse"]), [])
 
+    def test_supported_constraint_with_zero_matches_vetoes_intersection(self) -> None:
+        self.assertEqual(
+            self.route.exact_matches(["cotton", "budget around $10"]),
+            [],
+        )
     def test_query_intersects_accumulated_constraint_list(self) -> None:
         self.assertEqual(
             self.route.query(["cotton", "Fit: Regular"]),
