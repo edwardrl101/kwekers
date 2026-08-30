@@ -215,8 +215,10 @@ def call(prompt: str, system: str = "", max_tokens: int = 200) -> str | None:
             return None
         usage = decoded.get("usage")
         usage = usage if isinstance(usage, dict) else {}
-        if _number(usage.get("cost")) > 0:
-            _record(model, started, "nonzero_cost", response=decoded)
+        reported_cost = _number(usage.get("cost"), math.nan)
+        if not math.isfinite(reported_cost) or reported_cost != 0.0:
+            outcome = "nonzero_cost" if math.isfinite(reported_cost) else "invalid_cost"
+            _record(model, started, outcome, response=decoded)
             return None
         choices = decoded.get("choices")
         if not isinstance(choices, list) or not choices:
