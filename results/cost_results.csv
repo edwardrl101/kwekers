@@ -1,3 +1,3 @@
-mode,available,model_id,llm_calls,input_tokens,output_tokens,total_tokens,tokens_per_session,p50_llm_latency_ms,p95_llm_latency_ms,total_wall_seconds,estimated_cost_per_session,projected_cost_per_million_sessions
-llm_off,yes,none,0,0,0,0,0.0,0.0,0.0,16.454376499998034,0.0,0.0
-llm_on,no - src/llm.py absent,not exposed,not measurable,not measurable,not measurable,not measurable,not measurable,not measurable,not measurable,not measurable,not computed,not computed
+mode,available,technical_score,model_id,served_model_id,llm_calls,telemetry_records,input_tokens,output_tokens,total_tokens,tokens_per_session,p50_llm_latency_ms,p95_llm_latency_ms,total_wall_seconds,reported_api_cost_total,estimated_cost_per_session,projected_cost_per_million_sessions
+llm_off,yes,0.891111,none,none,0,0,0,0,0,0.0,0.0,0.0,14.113210790994344,0,0.0,0.0
+llm_on,not run; pass --measure-llm-on,not measured,cohere/north-mini-code:free,not measured,not measured,not measured,not measured,not measured,not measured,not measured,not measured,not measured,not measured,not measured,not computed,not computed

@@ -2,30 +2,31 @@
 
 ## Frozen baseline verification
 
-Level 0 reproduced TechnicalScore **0.877011** on 200 sessions. The shipped response reported 0 tokens.
+Level 0 reproduced TechnicalScore **0.891111** on 200 sessions. The shipped response reported 0 tokens.
+The assignment's `0.877011` gate is historical; current main's frozen offline test is `0.891111` after the three-state exact-constraint correction.
 
 ## Adversarial levels
 
 | Level | Score | Hit@10 | MRR | MTTC | Abs. delta | Rel. delta | Improved | Unchanged | Worsened | Disappeared |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 0 | 0.877011 | 0.995000 | 0.690702 | 2.385000 | +0.000000 | +0.000% | 0 | 200 | 0 | 0 |
-| 1 | 0.792086 | 0.900000 | 0.663288 | 3.845000 | -0.084925 | -9.683% | 52 | 64 | 84 | 19 |
-| 2 | 0.508444 | 0.575000 | 0.399812 | 5.950000 | -0.368567 | -42.025% | 36 | 42 | 122 | 85 |
-| 3 | 0.460816 | 0.520000 | 0.362054 | 6.390000 | -0.416195 | -47.456% | 31 | 40 | 129 | 95 |
-| 4 | 0.419598 | 0.465000 | 0.352325 | 6.930000 | -0.457413 | -52.156% | 28 | 36 | 136 | 106 |
+| 0 | 0.891111 | 1.000000 | 0.707704 | 2.060000 | +0.000000 | +0.000% | 0 | 200 | 0 | 0 |
+| 1 | 0.816230 | 0.915000 | 0.695099 | 3.490000 | -0.074881 | -8.403% | 53 | 55 | 92 | 17 |
+| 2 | 0.508444 | 0.575000 | 0.399812 | 5.950000 | -0.382667 | -42.943% | 35 | 37 | 128 | 85 |
+| 3 | 0.460816 | 0.520000 | 0.362054 | 6.390000 | -0.430295 | -48.287% | 30 | 34 | 136 | 96 |
+| 4 | 0.419598 | 0.465000 | 0.352325 | 6.930000 | -0.471513 | -52.913% | 27 | 30 | 143 | 107 |
 
 ## Per-scenario robustness
 
 | Level | Scenario | N | Hit@10 | MRR | MTTC |
 |---:|---|---:|---:|---:|---:|
-| 0 | buying | 80 | 0.987500 | 0.618110 | 1.937500 |
-| 0 | browsing | 80 | 1.000000 | 0.718046 | 2.212500 |
-| 0 | intent_override | 30 | 1.000000 | 0.833135 | 3.833333 |
-| 0 | boundary | 10 | 1.000000 | 0.625397 | 3.000000 |
-| 1 | buying | 80 | 0.900000 | 0.635064 | 3.600000 |
-| 1 | browsing | 80 | 0.937500 | 0.702063 | 3.250000 |
-| 1 | intent_override | 30 | 0.766667 | 0.551481 | 6.100000 |
-| 1 | boundary | 10 | 1.000000 | 0.914286 | 3.800000 |
+| 0 | buying | 80 | 1.000000 | 0.604509 | 1.325000 |
+| 0 | browsing | 80 | 1.000000 | 0.764876 | 2.087500 |
+| 0 | intent_override | 30 | 1.000000 | 0.848743 | 3.666667 |
+| 0 | boundary | 10 | 1.000000 | 0.652778 | 2.900000 |
+| 1 | buying | 80 | 0.925000 | 0.674816 | 3.037500 |
+| 1 | browsing | 80 | 0.950000 | 0.732307 | 3.037500 |
+| 1 | intent_override | 30 | 0.766667 | 0.576111 | 5.900000 |
+| 1 | boundary | 10 | 1.000000 | 0.916667 | 3.500000 |
 | 2 | buying | 80 | 0.600000 | 0.377966 | 5.425000 |
 | 2 | browsing | 80 | 0.625000 | 0.423646 | 5.487500 |
 | 2 | intent_override | 30 | 0.266667 | 0.244444 | 9.133333 |
@@ -65,10 +66,10 @@ Level 0 reproduced TechnicalScore **0.877011** on 200 sessions. The shipped resp
 - After: Actually, ignore my earlier preference. What I need is: leather!
 - Constraint changed: NO
 
-### Level 1 — public_0002 turn 8
+### Level 1 — public_0003 turn 1
 
-- Before: I don't have an additional preference for other.
-- After: I don't have an additional preference for other!
+- Before: I'm looking for Watches Wrist Watches. Stainless Steel Band
+- After: Could you show me Watches Wrist Watches. Stainless Steel Band
 - Constraint changed: NO
 
 ### Level 2 — public_0001 turn 1
@@ -191,7 +192,7 @@ Level 0 reproduced TechnicalScore **0.877011** on 200 sessions. The shipped resp
 
 - Original message: I'm looking for Outdoor & Work Snow & Cold Weather. A key requirement is: leather.
 - Perturbed message: Please help me find Outdoor & Work Snow & Cold Weather. What would suit me is made from genuine hide!
-- Original target rank: 1
+- Original target rank: 2
 - Perturbed target rank: 4
 - Likely cause: constraint wording changed, weakening exact-match and BM25 lexical overlap
 
@@ -209,32 +210,20 @@ Only `Agent.respond()` is included in per-turn latency; Agent/catalog constructi
 
 | Level | Turns | Mean ms | p50 ms | p95 ms | Wall seconds |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 476 | 34.399 | 31.759 | 74.159 | 16.454 |
-| 1 | 749 | 32.827 | 32.971 | 58.059 | 24.698 |
-| 2 | 1105 | 23.581 | 19.626 | 45.419 | 26.202 |
-| 3 | 1182 | 22.365 | 18.603 | 42.981 | 26.611 |
-| 4 | 1279 | 21.772 | 18.218 | 43.330 | 27.994 |
+| 0 | 412 | 34.086 | 32.063 | 69.397 | 14.113 |
+| 1 | 681 | 36.965 | 36.471 | 64.243 | 25.285 |
+| 2 | 1105 | 22.409 | 18.867 | 43.668 | 24.900 |
+| 3 | 1182 | 22.945 | 19.093 | 43.729 | 27.311 |
+| 4 | 1279 | 21.559 | 18.325 | 42.508 | 27.723 |
 
 ## LLM on/off cost
 
-| Mode | Available | Calls | Input tokens | Output tokens | Cost/session | Cost/1M sessions |
-|---|---|---:|---:|---:|---:|---:|
-| llm_off | yes | 0 | 0 | 0 | 0.0 | 0.0 |
-| llm_on | no - src/llm.py absent | not measurable | not measurable | not measurable | not computed | not computed |
+| Mode | Available | Score | Model | Calls | Input tokens | Output tokens | p50 ms | p95 ms | Cost/session | Cost/1M sessions |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| llm_off | yes | 0.891111 | none | 0 | 0 | 0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| llm_on | not run; pass --measure-llm-on | not measured | cohere/north-mini-code:free | not measured | not measured | not measured | not measured | not measured | not computed | not computed |
 
-The repository has no `src/llm.py`, so LLM-on calls, model ID, token counts, and LLM-only latency cannot be measured on this branch. Member 1 must expose those counters before an LLM-on row can be populated.
-
-Suggested Member 1 instrumentation (inside the existing LLM client, not the Agent ranking path):
-
-```python
-LLM_STATS = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "latencies_ms": [], "model_id": MODEL_ID}
-started = time.perf_counter()
-response = client_call(...)  # existing call
-LLM_STATS["latencies_ms"].append((time.perf_counter() - started) * 1000)
-LLM_STATS["calls"] += 1
-LLM_STATS["input_tokens"] += response.usage.prompt_tokens
-LLM_STATS["output_tokens"] += response.usage.completion_tokens
-```
+LLM-off is always measured with explicit false Agent flags and a reset telemetry state. LLM-on is only run when `--measure-llm-on` is supplied; this prevents an ordinary robustness run from making network calls. Token-price projections remain `not computed` unless explicit prices are supplied.
 
 ## Previous rejected experiments
 

@@ -2,7 +2,8 @@
 
 This module intentionally wraps the shipped Agent without changing production
 ranking or retrieval code. Level 0 is an identity control and must reproduce
-the frozen public-set TechnicalScore of 0.877011 before other levels run.
+the current main-branch offline TechnicalScore of 0.891111 before other levels
+run. The older 0.877011 score is retained in the Day 3 historical report.
 """
 
 from __future__ import annotations
@@ -38,10 +39,11 @@ from evaluator.local_evaluator import (  # noqa: E402
     metric_summary,
     normalize_recommendations,
 )
+from src import llm  # noqa: E402
 from starter.agent import Agent  # noqa: E402
 
 
-FROZEN_SCORE = 0.877011
+FROZEN_SCORE = 0.891111
 LEVELS = (0, 1, 2, 3, 4)
 SCENARIOS = ("buying", "browsing", "intent_override", "boundary")
 
@@ -244,6 +246,69 @@ def estimate_cost(
         (input_tokens / 1_000_000) * input_cost_per_million
         + (output_tokens / 1_000_000) * output_cost_per_million
     )
+
+
+def summarize_llm_telemetry(
+    records: list[dict],
+    *,
+    call_count: int,
+    sample_count: int,
+    total_wall_seconds: float | str,
+    input_cost_per_million: float | None,
+    output_cost_per_million: float | None,
+) -> dict:
+    """Aggregate the non-sensitive telemetry exposed by ``src.llm``."""
+    input_tokens = sum(int(record.get("prompt_tokens", 0)) for record in records)
+    output_tokens = sum(int(record.get("completion_tokens", 0)) for record in records)
+    total_tokens = input_tokens + output_tokens
+    latencies_ms = [
+        max(0.0, float(record.get("latency_seconds", 0.0))) * 1000
+        for record in records
+    ]
+    requested_models = sorted(
+        {
+            str(record["requested_model"])
+            for record in records
+            if record.get("requested_model")
+        }
+    )
+    served_models = sorted(
+        {
+            str(record["served_model"])
+            for record in records
+            if record.get("served_model")
+        }
+    )
+    estimated_total = estimate_cost(
+        input_tokens,
+        output_tokens,
+        input_cost_per_million,
+        output_cost_per_million,
+    )
+    reported_total = sum(max(0.0, float(record.get("cost", 0.0))) for record in records)
+    denominator = sample_count if sample_count > 0 else 1
+    return {
+        "model_id": ";".join(requested_models) or "none",
+        "served_model_id": ";".join(served_models) or "none",
+        "llm_calls": call_count,
+        "telemetry_records": len(records),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "tokens_per_session": total_tokens / denominator,
+        "p50_llm_latency_ms": _percentile(latencies_ms, 0.50),
+        "p95_llm_latency_ms": _percentile(latencies_ms, 0.95),
+        "total_wall_seconds": total_wall_seconds,
+        "reported_api_cost_total": reported_total,
+        "estimated_cost_per_session": (
+            estimated_total / denominator if estimated_total is not None else "not computed"
+        ),
+        "projected_cost_per_million_sessions": (
+            estimated_total / denominator * 1_000_000
+            if estimated_total is not None
+            else "not computed"
+        ),
+    }
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -454,7 +519,7 @@ def _write_csv(path: Path, rows: list[dict], fieldnames: list[str] | None = None
     path.parent.mkdir(parents=True, exist_ok=True)
     columns = fieldnames or (list(rows[0]) if rows else [])
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -492,7 +557,9 @@ def _markdown_report(
         "## Frozen baseline verification", "",
         f"Level 0 reproduced TechnicalScore **{baseline['recommended_technical_score']:.6f}** "
         f"on {baseline['sample_count']} sessions. The shipped response reported "
-        f"{baseline['reported_token_usage']['total_tokens']} tokens.", "",
+        f"{baseline['reported_token_usage']['total_tokens']} tokens.",
+        "The assignment's `0.877011` gate is historical; current main's frozen "
+        "offline test is `0.891111` after the three-state exact-constraint correction.", "",
         "## Adversarial levels", "",
         "| Level | Score | Hit@10 | MRR | MTTC | Abs. delta | Rel. delta | Improved | Unchanged | Worsened | Disappeared |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -534,21 +601,17 @@ def _markdown_report(
     for level, result in results.items():
         latency = result["latency"]
         lines.append(f"| {level} | {latency['turn_count']} | {latency['mean_ms']:.3f} | {latency['p50_ms']:.3f} | {latency['p95_ms']:.3f} | {latency['total_wall_seconds']:.3f} |")
-    lines.extend(["", "## LLM on/off cost", "", "| Mode | Available | Calls | Input tokens | Output tokens | Cost/session | Cost/1M sessions |", "|---|---|---:|---:|---:|---:|---:|"])
+    lines.extend(["", "## LLM on/off cost", "", "| Mode | Available | Score | Model | Calls | Input tokens | Output tokens | p50 ms | p95 ms | Cost/session | Cost/1M sessions |", "|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|"])
     for row in cost_rows:
-        lines.append(f"| {row['mode']} | {row['available']} | {row['llm_calls']} | {row['input_tokens']} | {row['output_tokens']} | {row['estimated_cost_per_session']} | {row['projected_cost_per_million_sessions']} |")
+        lines.append(
+            f"| {row['mode']} | {row['available']} | {row['technical_score']} | {row['model_id']} | "
+            f"{row['llm_calls']} | {row['input_tokens']} | {row['output_tokens']} | "
+            f"{row['p50_llm_latency_ms']} | {row['p95_llm_latency_ms']} | "
+            f"{row['estimated_cost_per_session']} | "
+            f"{row['projected_cost_per_million_sessions']} |"
+        )
     lines.extend([
-        "", "The repository has no `src/llm.py`, so LLM-on calls, model ID, token counts, and LLM-only latency cannot be measured on this branch. Member 1 must expose those counters before an LLM-on row can be populated.",
-        "", "Suggested Member 1 instrumentation (inside the existing LLM client, not the Agent ranking path):", "",
-        "```python",
-        "LLM_STATS = {\"calls\": 0, \"input_tokens\": 0, \"output_tokens\": 0, \"latencies_ms\": [], \"model_id\": MODEL_ID}",
-        "started = time.perf_counter()",
-        "response = client_call(...)  # existing call",
-        "LLM_STATS[\"latencies_ms\"].append((time.perf_counter() - started) * 1000)",
-        "LLM_STATS[\"calls\"] += 1",
-        "LLM_STATS[\"input_tokens\"] += response.usage.prompt_tokens",
-        "LLM_STATS[\"output_tokens\"] += response.usage.completion_tokens",
-        "```",
+        "", "LLM-off is always measured with explicit false Agent flags and a reset telemetry state. LLM-on is only run when `--measure-llm-on` is supplied; this prevents an ordinary robustness run from making network calls. Token-price projections remain `not computed` unless explicit prices are supplied.",
         "", "## Previous rejected experiments", "",
         "- Day 2 category filtering: browsing R@10 remained 0.0375 before and after. Rejected.",
         "- Day 3 near-duplicate suppression: only 7/200 sessions had a pair at 0.80; best score delta was about +0.00005. Rejected / do not ship.",
@@ -569,6 +632,18 @@ def main() -> None:
     parser.add_argument("--examples", type=int, default=5)
     parser.add_argument("--input-cost-per-million", type=float)
     parser.add_argument("--output-cost-per-million", type=float)
+    parser.add_argument(
+        "--measure-llm-on",
+        action="store_true",
+        help="Explicitly run one network-enabled LLM configuration",
+    )
+    parser.add_argument(
+        "--llm-on-level",
+        type=int,
+        choices=LEVELS,
+        default=4,
+        help="Adversarial level used for the optional LLM-on cost run",
+    )
     args = parser.parse_args()
     invalid = set(args.levels) - set(LEVELS)
     if invalid or 0 not in args.levels:
@@ -577,10 +652,22 @@ def main() -> None:
     samples = load_jsonl(args.dataset)
     catalog_ids, categories, products = catalog_index(args.catalog)
     results: dict[int, dict] = {}
+    llm.reset_state()
     for level in args.levels:
         print(f"Running adversarial Level {level}...", flush=True)
         results[level] = evaluate_level(
-            Agent(args.catalog), samples, catalog_ids, categories, products, level
+            Agent(
+                args.catalog,
+                enable_llm_normalize=False,
+                enable_llm_override=False,
+                enable_llm_message=False,
+                enable_confidence=False,
+            ),
+            samples,
+            catalog_ids,
+            categories,
+            products,
+            level,
         )
         if level == 0 and results[level]["recommended_technical_score"] != FROZEN_SCORE:
             raise SystemExit(
@@ -618,33 +705,89 @@ def main() -> None:
             })
 
     latency_rows = [{"level": level, **result["latency"]} for level, result in results.items()]
-    usage = baseline["reported_token_usage"]
-    offline_cost = estimate_cost(
-        usage["prompt_tokens"], usage["completion_tokens"],
-        args.input_cost_per_million, args.output_cost_per_million,
+    offline_summary = summarize_llm_telemetry(
+        llm.telemetry(),
+        call_count=llm.CALL_COUNT,
+        sample_count=len(samples),
+        total_wall_seconds=baseline["latency"]["total_wall_seconds"],
+        input_cost_per_million=args.input_cost_per_million,
+        output_cost_per_million=args.output_cost_per_million,
     )
-    if usage["total_tokens"] == 0:
-        offline_cost = 0.0
+    # Zero inference always has zero cost, even when no price parameters exist.
+    if offline_summary["total_tokens"] == 0:
+        offline_summary["estimated_cost_per_session"] = 0.0
+        offline_summary["projected_cost_per_million_sessions"] = 0.0
     cost_rows = [
         {
-            "mode": "llm_off", "available": "yes", "model_id": "none",
-            "llm_calls": 0, "input_tokens": usage["prompt_tokens"],
-            "output_tokens": usage["completion_tokens"], "total_tokens": usage["total_tokens"],
-            "tokens_per_session": usage["total_tokens"] / len(samples),
-            "p50_llm_latency_ms": 0.0, "p95_llm_latency_ms": 0.0,
-            "total_wall_seconds": baseline["latency"]["total_wall_seconds"],
-            "estimated_cost_per_session": offline_cost / len(samples) if offline_cost is not None else "not computed",
-            "projected_cost_per_million_sessions": offline_cost / len(samples) * 1_000_000 if offline_cost is not None else "not computed",
-        },
-        {
-            "mode": "llm_on", "available": "no - src/llm.py absent", "model_id": "not exposed",
-            "llm_calls": "not measurable", "input_tokens": "not measurable",
-            "output_tokens": "not measurable", "total_tokens": "not measurable",
-            "tokens_per_session": "not measurable", "p50_llm_latency_ms": "not measurable",
-            "p95_llm_latency_ms": "not measurable", "total_wall_seconds": "not measurable",
-            "estimated_cost_per_session": "not computed", "projected_cost_per_million_sessions": "not computed",
-        },
+            "mode": "llm_off",
+            "available": "yes",
+            "technical_score": baseline["recommended_technical_score"],
+            **offline_summary,
+        }
     ]
+
+    if args.measure_llm_on:
+        if not llm.setting("OPENROUTER_API_KEY") or not llm.setting("OPENROUTER_MODEL"):
+            raise SystemExit(
+                "--measure-llm-on requires OPENROUTER_API_KEY and "
+                "OPENROUTER_MODEL (a concrete :free model)"
+            )
+        print(f"Running explicit LLM-on Level {args.llm_on_level}...", flush=True)
+        llm.reset_state()
+        llm_started = time.perf_counter()
+        llm_result = evaluate_level(
+            Agent(
+                args.catalog,
+                enable_llm_normalize=True,
+                enable_llm_override=True,
+                enable_llm_message=False,
+                enable_confidence=False,
+            ),
+            samples,
+            catalog_ids,
+            categories,
+            products,
+            args.llm_on_level,
+        )
+        llm_wall = time.perf_counter() - llm_started
+        online_summary = summarize_llm_telemetry(
+            llm.telemetry(),
+            call_count=llm.CALL_COUNT,
+            sample_count=len(samples),
+            total_wall_seconds=llm_wall,
+            input_cost_per_million=args.input_cost_per_million,
+            output_cost_per_million=args.output_cost_per_million,
+        )
+        cost_rows.append(
+            {
+                "mode": f"llm_on_level_{args.llm_on_level}",
+                "available": "yes",
+                "technical_score": llm_result["recommended_technical_score"],
+                **online_summary,
+            }
+        )
+    else:
+        cost_rows.append(
+            {
+                "mode": "llm_on",
+                "available": "not run; pass --measure-llm-on",
+                "technical_score": "not measured",
+                "model_id": llm.setting("OPENROUTER_MODEL") or "not configured",
+                "served_model_id": "not measured",
+                "llm_calls": "not measured",
+                "telemetry_records": "not measured",
+                "input_tokens": "not measured",
+                "output_tokens": "not measured",
+                "total_tokens": "not measured",
+                "tokens_per_session": "not measured",
+                "p50_llm_latency_ms": "not measured",
+                "p95_llm_latency_ms": "not measured",
+                "total_wall_seconds": "not measured",
+                "reported_api_cost_total": "not measured",
+                "estimated_cost_per_session": "not computed",
+                "projected_cost_per_million_sessions": "not computed",
+            }
+        )
 
     _write_csv(output_dir / "adversarial_results.csv", result_rows)
     _write_csv(output_dir / "adversarial_session_deltas.csv", delta_rows)
