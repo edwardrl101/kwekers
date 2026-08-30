@@ -289,6 +289,11 @@ class AgentShellTest(unittest.TestCase):
             self.assertEqual(route_results["exact"], [("A003", 1.0)])
             self.assertEqual(fused[0], "A003")
             session["active_constraints"] = ["cotton", "missing"]
+            self.assertEqual(
+                agent._route_exact(session, "query", 2),
+                [("A003", 1.0), ("A004", 1.0)],
+            )
+            session["active_constraints"] = ["cotton", "budget around $1"]
             self.assertEqual(agent._route_exact(session, "query", 2), [])
 
     def test_route_collection_keeps_route_identity_and_scores(self) -> None:
