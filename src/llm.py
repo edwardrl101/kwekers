@@ -210,7 +210,7 @@ def call(prompt: str, system: str = "", max_tokens: int = 200) -> str | None:
             return None
         response_data = decoded
         served_model = decoded.get("model")
-        if isinstance(served_model, str) and served_model != model:
+        if served_model != model:
             _record(model, started, "model_mismatch", response=decoded)
             return None
         usage = decoded.get("usage")
