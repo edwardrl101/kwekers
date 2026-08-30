@@ -150,8 +150,7 @@ class ExactRoute:
         constraint_sets: list[set[str]] = []
         for c in constraints:
             asins = self._get_single_constraint_matches(c)
-            if asins:
-                constraint_sets.append(asins)
+            constraint_sets.append(asins if asins else set())
 
         if not constraint_sets:
             return []
