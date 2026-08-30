@@ -19,7 +19,7 @@ class FrozenOfflineBaselineTest(unittest.TestCase):
         catalog_path = ROOT / "data" / "catalog.jsonl"
         public_path = ROOT / "data" / "public_set.jsonl"
         if not catalog_path.exists() or not public_path.exists():
-            self.skipTest("frozen catalog/public set are not available")
+            self.fail("frozen catalog/public set are not available")
 
         offline = {
             "OPENROUTER_API_KEY": "",
