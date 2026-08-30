@@ -406,13 +406,13 @@ Top 10.
 
 ### Exact route
 
-`ExactRoute` indexes cleaned feature strings and `key: value` detail pairs. It
-can be extremely strong because the simulator derives customer constraints
-from the same product metadata.
-
-Its extraction currently captures the whole matters clause. A message with two
-semicolon-separated constraints may not match separately, which is a future
-improvement opportunity.
+`ExactRoute` indexes cleaned feature strings, `key: value` detail pairs, bare
+materials, and numeric prices. It can be extremely strong because the simulator
+derives customer constraints from the same product metadata. Accumulated
+constraints are intersected with three-state handling: unsupported constraints
+are skipped, supported constraints with zero matches veto the intersection, and
+supported matches are intersected. Semicolon-separated disclosed constraints
+are extracted individually.
 
 ### BM25 route
 

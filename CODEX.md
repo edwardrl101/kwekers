@@ -11,6 +11,13 @@ evaluation tooling. It records the state verified on 2026-08-29 on
 > scores `0.877011` on all 200 public sessions. See
 > `docs/day3-ablation-report.md` for the complete evidence.
 
+> **Cross-validation status (2026-08-30):** deterministic grouped,
+> scenario-stratified five-fold evaluation is implemented and all six historical
+> configurations have been measured. Production no-dense has mean score
+> `0.891111`, population SD `0.011835`, and worst-fold score `0.869613`; the
+> closest alternative, freshness plus dense, has mean `0.883063`. See
+> `docs/cv-baseline-report.md` and `data/cv_folds.json`.
+
 ## 1. Objective and deliverable
 
 The competition deliverable is exactly one Python class:
@@ -199,10 +206,13 @@ query(text: str | list[str], limit: int = 200) -> list[tuple[str, float]]
 ```
 
 It handles material tokens, `budget around $X` with 15% tolerance, and an
-intersection over every active constraint. An unmatched constraint contributes
-an empty set, so it forces the entire intersection empty instead of being
-silently skipped. Results are sorted before applying `limit`, which makes large
-single-constraint sets deterministic across processes.
+intersection over every supported active constraint. Unsupported or unindexed
+constraints contribute no exact evidence and are skipped. A supported
+constraint with zero matches contributes an empty set and vetoes the
+intersection. This three-state distinction avoids false vetoes from sparse
+indexes while preserving real contradictions. Results follow catalog order
+before applying `limit`, which makes large single-constraint sets deterministic
+across processes.
 
 `starter.Agent._route_exact()` passes `session["active_constraints"]` to
 `query()` in one call. A real `ExactRoute`-through-`Agent` test proves the
@@ -341,8 +351,7 @@ Full 200-session scenario results:
 | Intent override | 30 | 0.799179 | 0.900000 | 0.717262 | 4.300000 | 0.670000 |
 | Boundary | 10 | 0.816500 | 1.000000 | 0.515000 | 2.900000 | 0.810000 |
 
-These are historical numbers. The Day 3 production configuration has current
-verified results:
+These are historical numbers. The original Day 3 production measurement was:
 
 | Split | TechnicalScore | Hit@10 | MRR | MTTC | Efficiency |
 |---|---:|---:|---:|---:|---:|
@@ -358,6 +367,13 @@ Full-set production scenario results:
 | Browsing | 80 | 0.891164 | 1.000000 | 0.718046 | 2.212500 | 0.878750 |
 | Intent override | 30 | 0.893274 | 1.000000 | 0.833135 | 3.833333 | 0.716667 |
 | Boundary | 10 | 0.847619 | 1.000000 | 0.625397 | 3.000000 | 0.800000 |
+
+After merging main's conservative three-state exact semantics, the same
+production weights were rerun over all five folds. The aggregate 200-session
+result is now score `0.891111`, Hit@10 `1.000000`, MRR `0.707704`, MTTC
+`2.060000`, and Efficiency `0.894000`. Treat the tables immediately above as
+historical Day 3 evidence and `docs/cv-baseline-report.md` as the current
+configuration comparison.
 
 See `docs/day3-ablation-report.md` for all six configurations and decision
 details. A timed no-dense production run over all 200 sessions took 30.599
@@ -381,11 +397,12 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The current combined branch has 48 passing tests: the 39 route, Agent, dialog,
-bucket, evaluator, and exact tests from the Day 3 work plus nine near-duplicate
-utility tests inherited from `origin/main`. Coverage includes real
+The current combined branch has 62 passing tests across route, Agent, dialog,
+bucket, evaluator, exact, near-duplicate, and cross-validation behavior.
+Coverage includes real
 `ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
-override-reset, fallback-exclusion, and production defaults.
+override-reset, fallback-exclusion, production defaults, deterministic fold
+generation, group isolation, and out-of-fold aggregation.
 
 Run tune, holdout, or all sessions:
 
@@ -394,6 +411,20 @@ python scripts/eval.py --split tune --label experiment-name
 python scripts/eval.py --split holdout --label checkpoint-name
 python scripts/eval.py --split all --label report-name
 ```
+
+Run or validate grouped five-fold evaluation:
+
+```bash
+python scripts/eval_cv.py --validate-only
+python scripts/eval_cv.py --config no-dense --folds all
+python scripts/eval_cv.py --config bm25-only --folds all
+```
+
+The committed manifest has five 40-session folds, each containing 16 buying,
+16 browsing, 6 intent-override, and 2 boundary sessions. The current 200 public
+targets form 200 groups under the conservative target-ASIN plus
+variant-sensitive title policy. Cross-validation is a stability estimate for
+predeclared configurations, not a new untouched test set.
 
 `scripts/eval.py` prints overall and per-scenario metrics, writes ignored
 `results_<split>.json`, and appends a timestamped row to `runs/runs.csv` unless
@@ -561,7 +592,7 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 - The repository currently ignores the entire `scripts/` directory. Existing
   tracked scripts remain tracked, but a new script may require an intentional
   `git add -f`; review it carefully before doing so.
-- Run the 48-test suite and `git diff --check` before each major commit.
+- Run the 62-test suite and `git diff --check` before each major commit.
 - Commit every major change with a focused message, as explicitly requested by
   the user. Do not automatically push unless asked.
 - Avoid committing `data/SHA256SUMS` or `runs/` until their ownership/policy is
@@ -581,7 +612,7 @@ accumulated intent
   -> current top 10
 ```
 
-The next agent should preserve the `0.877011` working floor and improve one
+The next agent should preserve the `0.891111` working floor and improve one
 measured failure mode at a time. Dense, the bucket hard filter, and BM25-only
 were all measured; do not reintroduce them as production changes without new
 evidence.

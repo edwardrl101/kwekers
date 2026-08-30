@@ -61,6 +61,26 @@ The command prints overall and per-scenario metrics, writes
 Run `--split holdout` only for checkpoints, and use `--split all` when reporting
 a score explicitly measured on all 200 public sessions.
 
+For stability checks on frozen configurations, use the committed grouped,
+scenario-stratified five-fold manifest:
+
+```bash
+python scripts/eval_cv.py --config no-dense --folds all
+python scripts/eval_cv.py --config bm25-only --folds all
+```
+
+The runner reports fold mean, population standard deviation, worst fold, and
+aggregate out-of-fold metrics. Validate the manifest without the large catalog
+using `python scripts/eval_cv.py --validate-only`. Regenerate it deliberately
+with `python scripts/build_cv_folds.py`; generation requires the catalog so
+target-title groups can be audited. Cross-validation is a configuration
+stability check, not an untouched estimate after its results influence changes.
+
+GitHub Actions compiles the Python sources, runs the full test suite, validates
+the fold manifest, checks whitespace, and publishes a source artifact after the
+checks pass. Full catalog evaluation remains a local or manually provisioned
+job because the 50,000-product catalog is intentionally not stored in Git.
+
 ## Agent Interface
 
 ```python
