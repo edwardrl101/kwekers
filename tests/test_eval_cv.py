@@ -2,10 +2,25 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.eval_cv import aggregate_fold_results, summarize_sessions
+from scripts.eval import ABLATION_CONFIGS
+from scripts.eval_cv import CONFIGS, aggregate_fold_results, summarize_sessions
+from starter.agent import BUCKET_MATCH_BOOST, DENSE_SIMILARITY_WEIGHT, EXACT_MATCH_BOOST
 
 
 class CrossValidationEvaluationTest(unittest.TestCase):
+    def test_cv_configurations_match_historical_ablation_runner(self) -> None:
+        defaults = {
+            "enable_freshness": True,
+            "enable_dense": False,
+            "exact_match_boost": EXACT_MATCH_BOOST,
+            "bucket_match_boost": BUCKET_MATCH_BOOST,
+            "dense_similarity_weight": DENSE_SIMILARITY_WEIGHT,
+        }
+        expected = {
+            name: {**defaults, **options} for name, options in ABLATION_CONFIGS.items()
+        }
+        self.assertEqual(CONFIGS, expected)
+
     def test_aggregate_uses_all_out_of_fold_sessions(self) -> None:
         sessions = [
             {"scenario_type": "buying", "hit": True, "first_hit_turn": 1, "reciprocal_rank": 1.0},

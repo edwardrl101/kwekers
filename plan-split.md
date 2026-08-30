@@ -5,8 +5,9 @@
 > `data/cv_folds.json`, the runners are `scripts/build_cv_folds.py` and
 > `scripts/eval_cv.py`, and integrity tests are in `tests/test_cv_folds.py` and
 > `tests/test_eval_cv.py`. Production no-dense scored `0.877011` mean with
-> `0.019642` population SD; see `docs/cv-baseline-report.md`. The fixed holdout
-> remains unchanged and partially consumed.
+> `0.019642` population SD after a complete six-way comparison; see
+> `docs/cv-baseline-report.md`. The fixed holdout remains unchanged and
+> partially consumed.
 
 ## Purpose
 
@@ -37,7 +38,7 @@ At the time of this handoff:
   - MRR: `0.690702`;
   - MTTC: `2.385000`;
   - Efficiency: `0.861500`.
-- Combined feature-branch test suite: 53 passing tests after the CV work.
+- Combined feature-branch test suite: 54 passing tests after the CV work.
 - Full 200-session no-dense evaluation time in the Day 3 environment:
   approximately `30.599` seconds.
 

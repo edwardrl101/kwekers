@@ -25,12 +25,40 @@ from starter.agent import Agent  # noqa: E402
 
 
 CONFIGS: dict[str, dict[str, bool | float]] = {
+    "current": {
+        "enable_freshness": False,
+        "enable_dense": True,
+        "exact_match_boost": 0.35,
+        "bucket_match_boost": 0.10,
+        "dense_similarity_weight": 0.20,
+    },
+    "freshness": {
+        "enable_freshness": True,
+        "enable_dense": True,
+        "exact_match_boost": 0.35,
+        "bucket_match_boost": 0.10,
+        "dense_similarity_weight": 0.20,
+    },
     "no-dense": {
         "enable_freshness": True,
         "enable_dense": False,
         "exact_match_boost": 0.35,
         "bucket_match_boost": 0.10,
         "dense_similarity_weight": 0.0,
+    },
+    "no-bucket": {
+        "enable_freshness": True,
+        "enable_dense": True,
+        "exact_match_boost": 0.35,
+        "bucket_match_boost": 0.0,
+        "dense_similarity_weight": 0.20,
+    },
+    "no-exact": {
+        "enable_freshness": True,
+        "enable_dense": True,
+        "exact_match_boost": 0.0,
+        "bucket_match_boost": 0.10,
+        "dense_similarity_weight": 0.20,
     },
     "bm25-only": {
         "enable_freshness": True,

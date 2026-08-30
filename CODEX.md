@@ -12,9 +12,10 @@ evaluation tooling. It records the state verified on 2026-08-29 on
 > `docs/day3-ablation-report.md` for the complete evidence.
 
 > **Cross-validation status (2026-08-30):** deterministic grouped,
-> scenario-stratified five-fold evaluation is implemented. Production no-dense
-> has mean score `0.877011`, population SD `0.019642`, and worst-fold score
-> `0.840232`; BM25-only has mean `0.862811`. See
+> scenario-stratified five-fold evaluation is implemented and all six historical
+> configurations have been measured. Production no-dense has mean score
+> `0.877011`, population SD `0.019642`, and worst-fold score `0.840232`; the
+> closest alternative, freshness plus dense, has mean `0.869976`. See
 > `docs/cv-baseline-report.md` and `data/cv_folds.json`.
 
 ## 1. Objective and deliverable
@@ -387,8 +388,8 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The current combined branch has 53 passing tests: the 48 route, Agent, dialog,
-bucket, evaluator, exact, and near-duplicate tests from the Day 3 work plus five
+The current combined branch has 54 passing tests: the 48 route, Agent, dialog,
+bucket, evaluator, exact, and near-duplicate tests from the Day 3 work plus six
 cross-validation generation and aggregation tests. Coverage includes real
 `ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
 override-reset, fallback-exclusion, production defaults, deterministic fold
@@ -582,7 +583,7 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 - The repository currently ignores the entire `scripts/` directory. Existing
   tracked scripts remain tracked, but a new script may require an intentional
   `git add -f`; review it carefully before doing so.
-- Run the 53-test suite and `git diff --check` before each major commit.
+- Run the 54-test suite and `git diff --check` before each major commit.
 - Commit every major change with a focused message, as explicitly requested by
   the user. Do not automatically push unless asked.
 - Avoid committing `data/SHA256SUMS` or `runs/` until their ownership/policy is

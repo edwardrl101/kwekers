@@ -31,14 +31,20 @@ validation folds. The manifest stores every sample's group and a canonical
 SHA-256 digest. Tests enforce determinism, disjointness, complete coverage,
 group isolation, scenario counts, and loud failure on duplicate sample IDs.
 
-## Baseline results
+## Six-way configuration results
 
-Measured locally on 2026-08-30 with dense retrieval disabled:
+Measured locally on 2026-08-30. Dense runs used the shared catalog cache with
+50,000 finite `float16` vectors of shape `50000 x 384`,
+`sentence-transformers==6.0.0`, and CPU inference.
 
-| Configuration | Mean score | Population SD | Worst fold | OOF score | OOF Hit@10 | OOF MRR | OOF MTTC |
+| Configuration | Mean score | Population SD | Worst fold | OOF Hit@10 | OOF MRR | OOF MTTC | Runtime (s) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Production no-dense | **0.877011** | 0.019642 | 0.840232 | **0.877011** | 0.995000 | **0.690702** | **2.385000** |
-| BM25-only freshness | 0.862811 | **0.013850** | **0.841952** | 0.862811 | 0.995000 | 0.648038 | 2.455000 |
+| Production no-dense | **0.877011** | 0.019642 | 0.840232 | **0.995000** | **0.690702** | 2.385000 | **30.84** |
+| Freshness + dense | 0.869976 | 0.016757 | 0.838795 | **0.995000** | 0.664254 | **2.340000** | 62.94 |
+| No-bucket + dense | 0.863247 | 0.023537 | 0.816854 | **0.995000** | 0.646490 | 2.410000 | 63.67 |
+| BM25-only freshness | 0.862811 | **0.013850** | **0.841952** | **0.995000** | 0.648038 | 2.455000 | 32.18 |
+| No-exact + dense | 0.830052 | 0.018207 | 0.810122 | **0.995000** | 0.535506 | 2.405000 | 61.23 |
+| Historical current | 0.825627 | 0.044096 | 0.770902 | 0.940000 | 0.633756 | 2.725000 | 64.76 |
 
 Production no-dense fold scores were:
 
@@ -52,11 +58,17 @@ BM25-only fold scores were:
 0.868423, 0.841952, 0.881580, 0.852863, 0.869238
 ```
 
-Production improves aggregate MRR and MTTC while preserving Hit@10. Its
-advantage is positive in four of five folds; BM25-only is higher by 0.001720 in
-fold 1. The evidence supports retaining the production configuration, while
-the fold spread shows why future small gains should not be accepted from a
-single aggregate score.
+Production no-dense has the highest mean score and MRR, ties the best Hit@10,
+and is roughly twice as fast as every dense configuration. Dense plus freshness
+hits slightly earlier on average, but the MTTC gain is insufficient to offset
+its lower MRR. Removing exact evidence causes the largest MRR loss among the
+freshness-enabled ablations. The historical configuration without freshness is
+the only configuration whose Hit@10 falls below 0.995.
+
+Against BM25-only, production's advantage is positive in four of five folds;
+BM25-only is higher by 0.001720 in fold 1. The complete evidence supports
+retaining production no-dense, while the fold spread shows why future small
+gains should not be accepted from a single aggregate score.
 
 Generated `results_cv_*.json` files remain ignored. They contain per-session
 results and traceable code, data, catalog, manifest, runtime, and configuration
@@ -67,7 +79,11 @@ metadata.
 ```bash
 python scripts/build_cv_folds.py
 python scripts/eval_cv.py --validate-only
+python scripts/eval_cv.py --config current --folds all
+python scripts/eval_cv.py --config freshness --folds all
 python scripts/eval_cv.py --config no-dense --folds all
+python scripts/eval_cv.py --config no-bucket --folds all
+python scripts/eval_cv.py --config no-exact --folds all
 python scripts/eval_cv.py --config bm25-only --folds all
 ```
 
