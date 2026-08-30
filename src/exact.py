@@ -135,6 +135,23 @@ class ExactRoute:
         matches = set(self.exact_index.get(cleaned, [])) | set(self.exact_index.get(lowered, []))
         return matches
 
+    def _is_supported_constraint(self, constraint: str) -> bool:
+        """Return whether the exact route can authoritatively evaluate a constraint.
+
+        Support is separate from match count: a recognized budget or material
+        remains supported when zero products satisfy it, while an unknown phrase
+        or deliberately deferred colour constraint must be skipped.
+        """
+        cleaned = clean_constraint(constraint)
+        if not cleaned or UNSUPPORTED_COLOR_CONSTRAINT.match(cleaned):
+            return False
+
+        lowered = cleaned.lower()
+        if self.parse_budget(cleaned) is not None or lowered in MATERIALS:
+            return True
+
+        return cleaned in self.exact_index or lowered in self.exact_index
+
     def exact_matches(self, constraints: list[str]) -> list[str]:
         """Intersect every indexed constraint, skipping constraints we cannot match.
 
@@ -149,8 +166,9 @@ class ExactRoute:
 
         constraint_sets: list[set[str]] = []
         for c in constraints:
-            asins = self._get_single_constraint_matches(c)
-            constraint_sets.append(asins if asins else set())
+            if not self._is_supported_constraint(c):
+                continue
+            constraint_sets.append(self._get_single_constraint_matches(c))
 
         if not constraint_sets:
             return []
