@@ -33,9 +33,15 @@ def _sample_fields(samples: list[dict]) -> tuple[list[str], dict[str, str], dict
     scenarios: dict[str, str] = {}
     targets: dict[str, str] = {}
     for sample in samples:
-        sample_id = str(sample.get("sample_id", "")).strip()
-        scenario = str(sample.get("scenario_type", "")).strip()
-        target = str((sample.get("ground_truth") or {}).get("parent_asin", "")).strip()
+        raw_sample_id = sample.get("sample_id")
+        raw_scenario = sample.get("scenario_type")
+        ground_truth = sample.get("ground_truth")
+        raw_target = ground_truth.get("parent_asin") if isinstance(ground_truth, dict) else None
+        if not all(isinstance(value, str) for value in (raw_sample_id, raw_scenario, raw_target)):
+            raise ValueError("every sample requires string sample_id, scenario_type, and target ASIN")
+        sample_id = raw_sample_id.strip()
+        scenario = raw_scenario.strip()
+        target = raw_target.strip()
         if not sample_id or not scenario or not target:
             raise ValueError("every sample requires sample_id, scenario_type, and target ASIN")
         if sample_id in scenarios:
