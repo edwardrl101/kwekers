@@ -252,8 +252,8 @@ def validate_manifest(samples: list[dict], manifest: dict) -> None:
             raise ValueError(f"target ASIN {target} is split across declared groups")
     for fold in folds:
         validation_ids = fold.get("validation_sample_ids")
-        if not isinstance(validation_ids, list):
-            raise ValueError("each fold requires validation_sample_ids")
+        if not isinstance(validation_ids, list) or not validation_ids:
+            raise ValueError("each fold requires non-empty validation_sample_ids")
         counts = Counter()
         for sample_id in validation_ids:
             if sample_id not in scenarios:
