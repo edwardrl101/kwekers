@@ -232,7 +232,7 @@ def build_manifest(
 
 
 def validate_manifest(samples: list[dict], manifest: dict) -> None:
-    sample_ids, scenarios, _ = _sample_fields(samples)
+    sample_ids, scenarios, targets = _sample_fields(samples)
     folds = manifest.get("folds")
     if not isinstance(folds, list) or len(folds) != manifest.get("fold_count"):
         raise ValueError("manifest fold count is inconsistent")
@@ -244,6 +244,12 @@ def validate_manifest(samples: list[dict], manifest: dict) -> None:
     sample_groups = manifest.get("sample_groups")
     if not isinstance(sample_groups, dict) or set(sample_groups) != set(sample_ids):
         raise ValueError("sample_groups must cover the dataset exactly")
+    target_groups: dict[str, str] = {}
+    for sample_id, target in targets.items():
+        group_id = str(sample_groups[sample_id])
+        prior = target_groups.setdefault(target, group_id)
+        if prior != group_id:
+            raise ValueError(f"target ASIN {target} is split across declared groups")
     for fold in folds:
         validation_ids = fold.get("validation_sample_ids")
         if not isinstance(validation_ids, list):
