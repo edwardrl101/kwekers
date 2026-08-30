@@ -18,6 +18,15 @@ evaluation tooling. It records the state verified on 2026-08-29 on
 > closest alternative, freshness plus dense, has mean `0.883063`. See
 > `docs/cv-baseline-report.md` and `data/cv_folds.json`.
 
+> **Day 4 LLM integration status (2026-08-30):** the optional OpenRouter layer
+> is wired behind four default-off flags. `src/llm.py` accepts only pinned
+> `:free` models, caches successful calls, times out after three seconds, and
+> returns `None` on every failure. Regex-first normalization, paraphrased
+> override detection, confidence, and customer explanations all have
+> deterministic fallbacks. The 86-test suite includes a full frozen evaluation:
+> no key, flags off, score `0.891111`, and `CALL_COUNT == 0`. See
+> `docs/day4-member1-guide.md`.
+
 ## 1. Objective and deliverable
 
 The competition deliverable is exactly one Python class:
@@ -315,6 +324,26 @@ uses a deterministic seed derived from the user profile and turn. If the
 catalog itself is missing or too small, placeholders preserve response shape,
 although placeholders are invalid for scoring.
 
+### 4.8 Optional Day 4 assistance
+
+`Agent` exposes `enable_llm_normalize`, `enable_llm_override`,
+`enable_llm_message`, and `enable_confidence`; omitted values resolve from the
+corresponding environment names and default to false. The offline response and
+ranking path remain unchanged when they are false.
+
+`src.normalize` calls the LLM only after deterministic parsing misses, then
+cleans every proposed constraint and requires an `ExactRoute` catalog match
+before merging it into `SlotState`. Override detection first uses the known
+regex and calls the model only for messages containing plausible replacement
+language. `src.explain` has a deterministic template and may optionally ask the
+model for a concise customer message. Confidence is normalized softmax entropy
+over the fused BM25 pool and never changes recommendation order.
+
+The client reads process environment variables first and the ignored root
+`.env` only as a local fallback. It never logs prompts, responses, or the key.
+The verified direct-API free model is `cohere/north-mini-code:free`; the
+submission must still assume credentials and network are unavailable.
+
 ## 5. Verified evaluation results
 
 Starter reference from the repository:
@@ -397,12 +426,14 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The current combined branch has 62 passing tests across route, Agent, dialog,
+The current combined branch has 86 passing tests across route, Agent, dialog,
 bucket, evaluator, exact, near-duplicate, and cross-validation behavior.
 Coverage includes real
 `ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
 override-reset, fallback-exclusion, production defaults, deterministic fold
-generation, group isolation, and out-of-fold aggregation.
+generation, group isolation, out-of-fold aggregation, fail-closed OpenRouter
+behavior, regex-first LLM parsing, deterministic explanations, and the frozen
+offline score.
 
 Run tune, holdout, or all sessions:
 
