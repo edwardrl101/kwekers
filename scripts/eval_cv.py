@@ -222,6 +222,7 @@ def main() -> None:
         "summary": aggregate_fold_results(fold_results),
     }
     output = args.output or ROOT / f"results_cv_{args.config}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     _print_report(report)
     print(f"wrote {output}")
