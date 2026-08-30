@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from starter.agent import Agent
 
@@ -55,6 +56,61 @@ class AgentShellTest(unittest.TestCase):
             self.assertEqual(agent.dense_similarity_weight, 0.0)
             self.assertIsNone(agent._dense_route)
             self.assertNotIn("dense", agent._route_errors)
+
+    def test_all_day4_features_can_be_explicitly_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_llm_normalize=False,
+                enable_llm_override=False,
+                enable_llm_message=False,
+                enable_confidence=False,
+            )
+            agent.reset("session", {})
+            with patch("src.llm.call") as llm_call:
+                response = agent.respond("session", "I need shoes", 1, 10)
+
+            llm_call.assert_not_called()
+            self.assertEqual(
+                response["message"],
+                "I am refining the shortlist. What else should I consider?",
+            )
+            self.assertEqual(response["usage"], {"prompt_tokens": 0, "completion_tokens": 0})
+
+    def test_confidence_does_not_change_recommendation_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path = self._catalog(Path(directory), count=20)
+            without = Agent(catalog_path, enable_confidence=False)
+            with_confidence = Agent(catalog_path, enable_confidence=True)
+            for agent in (without, with_confidence):
+                agent._route_bucket = lambda *_: []
+                agent._route_exact = lambda *_: [("A005", 1.0)]
+                agent._route_dense = lambda *_: []
+                agent._route_bm25 = lambda *_: [
+                    (f"A{index:03d}", 100.0 - index) for index in range(20)
+                ]
+                agent.reset("session", {})
+
+            plain = without.respond("session", "query", 1, 10)
+            enriched = with_confidence.respond("session", "query", 1, 10)
+
+            self.assertEqual(plain["recommendations"], enriched["recommendations"])
+            self.assertGreaterEqual(with_confidence._sessions["session"]["confidence"], 0.0)
+            self.assertLessEqual(with_confidence._sessions["session"]["confidence"], 1.0)
+
+    def test_llm_message_hook_preserves_response_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_llm_message=True,
+            )
+            agent.reset("session", {})
+            with patch("src.explain.explain", return_value="A concise explanation."):
+                response = agent.respond("session", "I need shoes", 1, 10)
+
+            self.assertEqual(response["message"], "A concise explanation.")
+            self.assertEqual(response["ask_attribute"], "other")
+            self.assertEqual(len(response["recommendations"]), 10)
 
     def test_broken_route_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -320,6 +320,39 @@ class SlotState:
 
         return new_items
 
+    def add_external_constraints(
+        self,
+        values: list[str],
+        turn: int,
+        *,
+        source: str = "llm_normalize",
+        is_override: bool = False,
+    ) -> list[Constraint]:
+        """Merge validated external constraints without bypassing slot rules."""
+        cleaned_values = [str(value).strip() for value in values if str(value).strip()]
+        preferred_attr = classify_constraint(cleaned_values[0]) if cleaned_values else None
+        if is_override:
+            self.override_count += 1
+            self._demote_overridden_preference(preferred_attr=preferred_attr, turn=turn)
+
+        existing = {item.key for item in self.constraints if item.active}
+        existing.update(item.key for item in self.soft_constraints)
+        new_items: list[Constraint] = []
+        for value in cleaned_values:
+            key = _normalise(value)
+            if not key or key in existing:
+                continue
+            item = Constraint(
+                text=value,
+                attribute=classify_constraint(value),
+                turn=turn,
+                source=source,
+            )
+            self.constraints.append(item)
+            new_items.append(item)
+            existing.add(key)
+        return new_items
+
     def _demote_overridden_preference(self, preferred_attr: str | None, turn: int) -> Constraint | None:
         candidate: Constraint | None = None
 

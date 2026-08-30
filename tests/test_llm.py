@@ -4,6 +4,7 @@ import io
 import json
 import os
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
@@ -92,6 +93,15 @@ class OpenRouterClientTest(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         self.assertEqual(llm.CALL_COUNT, 2)
 
+    def test_http_status_is_recorded_without_response_body(self) -> None:
+        self._configure()
+        error = urllib.error.HTTPError(
+            llm.OPENROUTER_URL, 429, "rate limited", {}, None
+        )
+        with patch("urllib.request.urlopen", side_effect=error):
+            self.assertIsNone(llm.call("hello"))
+        self.assertEqual(llm.telemetry()[0]["outcome"], "http_429")
+
     def test_nonzero_reported_cost_is_rejected(self) -> None:
         self._configure()
         payload = {
@@ -103,6 +113,17 @@ class OpenRouterClientTest(unittest.TestCase):
             self.assertIsNone(llm.call("hello"))
         self.assertEqual(llm.telemetry()[0]["outcome"], "nonzero_cost")
 
+    def test_unexpected_served_model_is_rejected(self) -> None:
+        self._configure()
+        payload = {
+            "model": "vendor/different:free",
+            "choices": [{"message": {"content": "answer"}}],
+            "usage": {"cost": 0},
+        }
+        with patch("urllib.request.urlopen", return_value=FakeResponse(payload)):
+            self.assertIsNone(llm.call("hello"))
+        self.assertEqual(llm.telemetry()[0]["outcome"], "model_mismatch")
+
     def test_local_dotenv_is_used_only_when_environment_is_missing(self) -> None:
         fake_env = io.StringIO(
             "OPENROUTER_API_KEY=local-key\n"
@@ -113,6 +134,14 @@ class OpenRouterClientTest(unittest.TestCase):
                 llm._configured_credentials(),
                 ("local-key", "vendor/local:free"),
             )
+
+    def test_environment_flag_parser_is_conservative(self) -> None:
+        os.environ["FEATURE"] = "true"
+        self.assertTrue(llm.env_flag("FEATURE"))
+        os.environ["FEATURE"] = "false"
+        self.assertFalse(llm.env_flag("FEATURE", True))
+        os.environ["FEATURE"] = "unexpected"
+        self.assertTrue(llm.env_flag("FEATURE", True))
 
 
 if __name__ == "__main__":

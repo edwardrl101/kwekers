@@ -7,6 +7,7 @@ handle ``None`` deterministically, and all LLM feature flags default to off.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -64,14 +65,24 @@ def _dotenv_value(name: str) -> str:
     return ""
 
 
-def _setting(name: str) -> str:
+def setting(name: str) -> str:
     """Prefer an injected environment variable, then the ignored local .env."""
     return os.getenv(name, "").strip() or _dotenv_value(name)
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    """Read a conservative boolean flag; unknown values use the default."""
+    value = setting(name).casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 def _configured_credentials() -> tuple[str, str] | None:
-    api_key = _setting("OPENROUTER_API_KEY")
-    model = _setting("OPENROUTER_MODEL")
+    api_key = setting("OPENROUTER_API_KEY")
+    model = setting("OPENROUTER_MODEL")
     if not api_key or not model:
         return None
     # Prevent an accidental paid request or cross-model router request.
@@ -98,10 +109,12 @@ def _number(value: Any, default: float = 0.0) -> float:
     if isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     if isinstance(value, str):
         try:
-            return float(value)
+            parsed = float(value)
+            return parsed if math.isfinite(parsed) else default
         except ValueError:
             return default
     return default
@@ -195,6 +208,10 @@ def call(prompt: str, system: str = "", max_tokens: int = 200) -> str | None:
             _record(model, started, "invalid_json_shape")
             return None
         response_data = decoded
+        served_model = decoded.get("model")
+        if isinstance(served_model, str) and served_model != model:
+            _record(model, started, "model_mismatch", response=decoded)
+            return None
         usage = decoded.get("usage")
         usage = usage if isinstance(usage, dict) else {}
         if _number(usage.get("cost")) > 0:
@@ -215,12 +232,14 @@ def call(prompt: str, system: str = "", max_tokens: int = 200) -> str | None:
             _CACHE[key] = result
         _record(model, started, "success", response=decoded)
         return result
+    except urllib.error.HTTPError as error:
+        _record(model, started, f"http_{error.code}", response=response_data)
+        return None
     except (
         OSError,
         UnicodeError,
         ValueError,
         TypeError,
-        urllib.error.HTTPError,
         urllib.error.URLError,
     ) as error:
         _record(model, started, type(error).__name__, response=response_data)
