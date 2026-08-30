@@ -4,8 +4,8 @@
 > first-version CI workflow are implemented. The deterministic manifest is
 > `data/cv_folds.json`, the runners are `scripts/build_cv_folds.py` and
 > `scripts/eval_cv.py`, and integrity tests are in `tests/test_cv_folds.py` and
-> `tests/test_eval_cv.py`. Production no-dense scored `0.877011` mean with
-> `0.019642` population SD after a complete six-way comparison; see
+> `tests/test_eval_cv.py`. Production no-dense scored `0.891111` mean with
+> `0.011835` population SD after the post-merge six-way comparison; see
 > `docs/cv-baseline-report.md`. The fixed holdout remains unchanged and
 > partially consumed.
 
@@ -33,12 +33,12 @@ At the time of this handoff:
   - shown-product history cleared on intent override;
   - dense retrieval disabled with weight `0.0`.
 - Full public-set result:
-  - TechnicalScore: `0.877011`;
-  - HitRate@10: `0.995000`;
-  - MRR: `0.690702`;
-  - MTTC: `2.385000`;
-  - Efficiency: `0.861500`.
-- Combined feature-branch test suite: 54 passing tests after the CV work.
+  - TechnicalScore: `0.891111`;
+  - HitRate@10: `1.000000`;
+  - MRR: `0.707704`;
+  - MTTC: `2.060000`;
+  - Efficiency: `0.894000`.
+- Combined feature-branch test suite: 62 passing tests after the latest merge.
 - Full 200-session no-dense evaluation time in the Day 3 environment:
   approximately `30.599` seconds.
 

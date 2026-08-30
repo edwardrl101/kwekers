@@ -6,8 +6,8 @@ from pathlib import Path
 
 # Common materials extracted by the simulator's intent_card()
 MATERIALS = {
-    "cotton", "polyester", "nylon", "leather", "wool", "silk", 
-    "canvas", "denim", "spandex", "linen", "velvet", "fleece", 
+    "cotton", "polyester", "nylon", "leather", "wool", "silk",
+    "canvas", "denim", "spandex", "linen", "velvet", "fleece",
     "suede", "mesh", "cashmere", "rayon", "satin", "acrylic", "fabric"
 }
 
@@ -110,15 +110,18 @@ class ExactRoute:
         cleaned = clean_constraint(message)
         return [cleaned] if cleaned else []
 
-    def _get_single_constraint_matches(self, constraint: str) -> set[str]:
+    def _get_single_constraint_matches(self, constraint: str) -> set[str] | None:
+        """Return matches, an empty supported result, or None if unsupported."""
         cleaned = clean_constraint(constraint)
+        if not cleaned:
+            return None
         lowered = cleaned.lower()
 
         # The current exact index has only sparse explicit colour details.
         # Treating those partial postings as authoritative caused false vetoes;
         # Day 3 explicitly defers a complete colour index.
         if UNSUPPORTED_COLOR_CONSTRAINT.match(cleaned):
-            return set()
+            return None
 
         # Handler A: Budget ranges ("budget around $29.99")
         budget = self.parse_budget(cleaned)
@@ -129,11 +132,14 @@ class ExactRoute:
 
         # Handler B: Bare material words ("cotton")
         if lowered in MATERIALS:
-            return self.material_index.get(lowered, set())
+            return set(self.material_index.get(lowered, set()))
 
         # Handler C: Verbatim feature or detail string lookup ("color: black", feature line)
-        matches = set(self.exact_index.get(cleaned, [])) | set(self.exact_index.get(lowered, []))
-        return matches
+        if cleaned in self.exact_index or lowered in self.exact_index:
+            return set(self.exact_index.get(cleaned, set())) | set(
+                self.exact_index.get(lowered, set())
+            )
+        return None
 
     def exact_matches(self, constraints: list[str]) -> list[str]:
         """Intersect every indexed constraint, skipping constraints we cannot match.
@@ -150,7 +156,8 @@ class ExactRoute:
         constraint_sets: list[set[str]] = []
         for c in constraints:
             asins = self._get_single_constraint_matches(c)
-            constraint_sets.append(asins if asins else set())
+            if asins is not None:
+                constraint_sets.append(asins)
 
         if not constraint_sets:
             return []

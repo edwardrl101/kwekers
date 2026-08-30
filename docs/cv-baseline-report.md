@@ -39,17 +39,17 @@ Measured locally on 2026-08-30. Dense runs used the shared catalog cache with
 
 | Configuration | Mean score | Population SD | Worst fold | OOF Hit@10 | OOF MRR | OOF MTTC | Runtime (s) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Production no-dense | **0.877011** | 0.019642 | 0.840232 | **0.995000** | **0.690702** | 2.385000 | **30.84** |
-| Freshness + dense | 0.869976 | 0.016757 | 0.838795 | **0.995000** | 0.664254 | **2.340000** | 62.94 |
-| No-bucket + dense | 0.863247 | 0.023537 | 0.816854 | **0.995000** | 0.646490 | 2.410000 | 63.67 |
-| BM25-only freshness | 0.862811 | **0.013850** | **0.841952** | **0.995000** | 0.648038 | 2.455000 | 32.18 |
-| No-exact + dense | 0.830052 | 0.018207 | 0.810122 | **0.995000** | 0.535506 | 2.405000 | 61.23 |
-| Historical current | 0.825627 | 0.044096 | 0.770902 | 0.940000 | 0.633756 | 2.725000 | 64.76 |
+| Production no-dense | **0.891111** | **0.011835** | **0.869613** | **1.000000** | **0.707704** | 2.060000 | 48.09 |
+| Freshness + dense | 0.883063 | 0.025279 | 0.834414 | 0.995000 | 0.688877 | **2.055000** | 85.74 |
+| Historical current | 0.875684 | 0.027400 | 0.823592 | 0.985000 | 0.686282 | 2.135000 | 102.02 |
+| No-bucket + dense | 0.870561 | 0.025259 | 0.822426 | 0.995000 | 0.647536 | 2.060000 | 75.06 |
+| BM25-only freshness | 0.862811 | 0.013850 | 0.841952 | 0.995000 | 0.648038 | 2.455000 | **32.18** |
+| No-exact + dense | 0.830052 | 0.018207 | 0.810122 | 0.995000 | 0.535506 | 2.405000 | 61.23 |
 
 Production no-dense fold scores were:
 
 ```text
-0.890414, 0.840232, 0.896726, 0.879643, 0.878039
+0.890958, 0.869613, 0.894351, 0.905708, 0.894926
 ```
 
 BM25-only fold scores were:
@@ -58,17 +58,21 @@ BM25-only fold scores were:
 0.868423, 0.841952, 0.881580, 0.852863, 0.869238
 ```
 
-Production no-dense has the highest mean score and MRR, ties the best Hit@10,
-and is roughly twice as fast as every dense configuration. Dense plus freshness
-hits slightly earlier on average, but the MTTC gain is insufficient to offset
-its lower MRR. Removing exact evidence causes the largest MRR loss among the
-freshness-enabled ablations. The historical configuration without freshness is
-the only configuration whose Hit@10 falls below 0.995.
+Production no-dense has the highest mean score, lowest variance, best worst
+fold, only perfect Hit@10, and highest MRR. Dense plus freshness hits 0.005 turns
+earlier on average, but the negligible MTTC gain is insufficient to offset its
+lower Hit@10 and MRR. Removing exact evidence causes the largest MRR loss among
+the freshness-enabled ablations. Production is faster than every dense
+configuration, although BM25-only remains the fastest control.
 
-Against BM25-only, production's advantage is positive in four of five folds;
-BM25-only is higher by 0.001720 in fold 1. The complete evidence supports
+Production beats BM25-only on all five folds. The complete evidence supports
 retaining production no-dense, while the fold spread shows why future small
 gains should not be accepted from a single aggregate score.
+
+These rows incorporate the post-merge three-state exact semantics: unsupported
+constraints are skipped, supported zero-match constraints veto, and supported
+matches intersect. Configurations with nonzero exact weight were rerun after
+that correction; BM25-only and no-exact are behaviorally unaffected.
 
 Generated `results_cv_*.json` files remain ignored. They contain per-session
 results and traceable code, data, catalog, manifest, runtime, and configuration
