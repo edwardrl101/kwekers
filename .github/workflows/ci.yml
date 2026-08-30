@@ -1,0 +1,45 @@
+name: Kwekers CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main, feat/route-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python sources
+        run: python -m compileall -q evaluator starter src scripts tests
+      - name: Run unit and integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate five-fold manifest
+        run: python scripts/eval_cv.py --validate-only
+      - name: Check whitespace errors
+        shell: bash
+        run: |
+          if git grep -nI -E '[[:blank:]]+$' -- '*.py' '*.md' '*.yml' '*.yaml'; then
+            echo "Trailing whitespace found"
+            exit 1
+          fi
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build reproducible source artifact
+        run: git archive --format=zip --output=kwekers-agent-source.zip HEAD starter src
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kwekers-agent-source-${{ github.sha }}
+          path: kwekers-agent-source.zip
+          if-no-files-found: error

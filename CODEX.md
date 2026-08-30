@@ -11,6 +11,12 @@ evaluation tooling. It records the state verified on 2026-08-29 on
 > scores `0.877011` on all 200 public sessions. See
 > `docs/day3-ablation-report.md` for the complete evidence.
 
+> **Cross-validation status (2026-08-30):** deterministic grouped,
+> scenario-stratified five-fold evaluation is implemented. Production no-dense
+> has mean score `0.877011`, population SD `0.019642`, and worst-fold score
+> `0.840232`; BM25-only has mean `0.862811`. See
+> `docs/cv-baseline-report.md` and `data/cv_folds.json`.
+
 ## 1. Objective and deliverable
 
 The competition deliverable is exactly one Python class:
@@ -381,11 +387,12 @@ Run all tests:
 python -m unittest discover -s tests -v
 ```
 
-The current combined branch has 48 passing tests: the 39 route, Agent, dialog,
-bucket, evaluator, and exact tests from the Day 3 work plus nine near-duplicate
-utility tests inherited from `origin/main`. Coverage includes real
+The current combined branch has 53 passing tests: the 48 route, Agent, dialog,
+bucket, evaluator, exact, and near-duplicate tests from the Day 3 work plus five
+cross-validation generation and aggregation tests. Coverage includes real
 `ExactRoute`-through-`Agent`, deterministic exact limiting, freshness,
-override-reset, fallback-exclusion, and production defaults.
+override-reset, fallback-exclusion, production defaults, deterministic fold
+generation, group isolation, and out-of-fold aggregation.
 
 Run tune, holdout, or all sessions:
 
@@ -394,6 +401,20 @@ python scripts/eval.py --split tune --label experiment-name
 python scripts/eval.py --split holdout --label checkpoint-name
 python scripts/eval.py --split all --label report-name
 ```
+
+Run or validate grouped five-fold evaluation:
+
+```bash
+python scripts/eval_cv.py --validate-only
+python scripts/eval_cv.py --config no-dense --folds all
+python scripts/eval_cv.py --config bm25-only --folds all
+```
+
+The committed manifest has five 40-session folds, each containing 16 buying,
+16 browsing, 6 intent-override, and 2 boundary sessions. The current 200 public
+targets form 200 groups under the conservative target-ASIN plus
+variant-sensitive title policy. Cross-validation is a stability estimate for
+predeclared configurations, not a new untouched test set.
 
 `scripts/eval.py` prints overall and per-scenario metrics, writes ignored
 `results_<split>.json`, and appends a timestamped row to `runs/runs.csv` unless
@@ -561,7 +582,7 @@ Do not attempt to fix a candidate-generation miss by tuning reranker weights.
 - The repository currently ignores the entire `scripts/` directory. Existing
   tracked scripts remain tracked, but a new script may require an intentional
   `git add -f`; review it carefully before doing so.
-- Run the 48-test suite and `git diff --check` before each major commit.
+- Run the 53-test suite and `git diff --check` before each major commit.
 - Commit every major change with a focused message, as explicitly requested by
   the user. Do not automatically push unless asked.
 - Avoid committing `data/SHA256SUMS` or `runs/` until their ownership/policy is
