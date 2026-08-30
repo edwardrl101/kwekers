@@ -191,6 +191,19 @@ def main() -> None:
     options = CONFIGS[args.config]
     started = time.perf_counter()
     agent = Agent(args.catalog, **options)
+    required_routes = {"bm25": agent._bm25_route}
+    if float(options["exact_match_boost"]) > 0.0:
+        required_routes["exact"] = agent._exact_route
+    if float(options["bucket_match_boost"]) > 0.0:
+        required_routes["bucket"] = agent._bucket_route
+    if options["enable_dense"] and float(options["dense_similarity_weight"]) > 0.0:
+        required_routes["dense"] = agent._dense_route
+    unavailable = [name for name, route in required_routes.items() if route is None]
+    if unavailable:
+        details = "; ".join(
+            f"{name}: {agent._route_errors.get(name, 'unavailable')}" for name in unavailable
+        )
+        raise RuntimeError(f"required retrieval routes failed to initialize: {details}")
     fold_results: list[dict] = []
     for fold in selected_folds:
         fold_samples = [sample_by_id[sample_id] for sample_id in fold["validation_sample_ids"]]
