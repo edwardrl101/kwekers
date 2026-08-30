@@ -166,7 +166,11 @@ class ExactRoute:
             return []
 
         if isinstance(text, list):
-            constraints = [clean_constraint(c) for c in text if clean_constraint(c)]
+            constraints: list[str] = []
+            for constraint in text:
+                cleaned = clean_constraint(constraint)
+                if cleaned:
+                    constraints.append(cleaned)
         else:
             constraints = self.extract_constraints_from_message(text)
 
