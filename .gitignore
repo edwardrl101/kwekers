@@ -9,6 +9,7 @@ scripts/
 scripts/*
 !scripts/build_cv_folds.py
 !scripts/eval_cv.py
+!scripts/llm_smoke.py
 data/split.json
 results_*.json
 data/catalog.jsonl

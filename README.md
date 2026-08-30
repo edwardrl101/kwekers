@@ -120,6 +120,24 @@ Only exact `parent_asin` equality produces a hit. Core metrics are also reported
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
 
+### Optional OpenRouter layer
+
+The production ranking path remains fully offline. Optional regex-miss
+normalization, paraphrased override detection, confidence-aware explanations,
+and LLM-written messages are protected by default-off flags. The shared client
+accepts only a pinned `:free` model, times out after three seconds, and falls
+back deterministically on every failure.
+
+Copy `.env.example` to an untracked `.env`, add your local key, and run:
+
+```bash
+python scripts/llm_smoke.py
+```
+
+See `docs/day4-member1-guide.md` for the architecture, flags, security model,
+offline freeze, and reproducibility commands. Never include `.env` or an API
+key in a submission; official scoring does not require network access.
+
 ## Files
 
 ```text
