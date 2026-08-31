@@ -4,7 +4,15 @@ import unittest
 
 import numpy as np
 
-from src.retrieval import BM25Route, _top_k, extract_constraints, norm, strip_boilerplate
+from src.retrieval import (
+    BM25Route,
+    _top_k,
+    compose_bm25_query,
+    extract_constraints,
+    messages_to_bm25_query,
+    norm,
+    strip_boilerplate,
+)
 
 
 class NormalizationTest(unittest.TestCase):
@@ -38,6 +46,40 @@ class ConstraintExtractionTest(unittest.TestCase):
     def test_strip_boilerplate_removes_every_known_phrase(self) -> None:
         message = "I don't have a preference for color; please use your judgment."
         self.assertEqual(strip_boilerplate(message), "color")
+
+
+class QueryCompositionTest(unittest.TestCase):
+    def test_production_composer_places_category_before_unique_constraints(self) -> None:
+        self.assertEqual(
+            compose_bm25_query(
+                "Accessories Belts", ["leather", "LEATHER", "Buckle closure"]
+            ),
+            "Accessories Belts leather Buckle closure",
+        )
+
+    def test_message_adapter_preserves_category_and_removes_template_text(self) -> None:
+        messages = [
+            "I'm looking for Accessories Belts. Buckle closure",
+            "For that, what matters is: leather; 100% Leather.",
+        ]
+        self.assertEqual(
+            messages_to_bm25_query("Accessories Belts", messages),
+            "Accessories Belts buckle closure leather 100% leather",
+        )
+
+    def test_browsing_opener_does_not_duplicate_category(self) -> None:
+        self.assertEqual(
+            messages_to_bm25_query(
+                "Women Dresses",
+                ["I'm looking for Women Dresses, but I'm still exploring."],
+            ),
+            "Women Dresses",
+        )
+
+    def test_empty_inputs_use_fallback(self) -> None:
+        self.assertEqual(
+            compose_bm25_query(None, [], fallback="raw request"), "raw request"
+        )
 
 
 class TopKDeterminismTest(unittest.TestCase):

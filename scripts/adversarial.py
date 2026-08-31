@@ -2,7 +2,7 @@
 
 This module intentionally wraps the shipped Agent without changing production
 ranking or retrieval code. Level 0 is an identity control and must reproduce
-the current main-branch offline TechnicalScore of 0.891111 before other levels
+the current main-branch offline TechnicalScore of 0.891084 before other levels
 run. The older 0.877011 score is retained in the Day 3 historical report.
 """
 
@@ -43,7 +43,7 @@ from src import llm  # noqa: E402
 from starter.agent import Agent  # noqa: E402
 
 
-FROZEN_SCORE = 0.891111
+FROZEN_SCORE = 0.891084
 LEVELS = (0, 1, 2, 3, 4)
 SCENARIOS = ("buying", "browsing", "intent_override", "boundary")
 
@@ -524,6 +524,25 @@ def _write_csv(path: Path, rows: list[dict], fieldnames: list[str] | None = None
         writer.writerows(rows)
 
 
+def _preserved_online_rows(path: Path) -> list[dict]:
+    """Keep successful online evidence when an offline-only run refreshes files."""
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    preserved: list[dict] = []
+    for row in rows:
+        mode = str(row.get("mode", ""))
+        available = str(row.get("available", ""))
+        if "llm_on" not in mode or available not in {"yes", "historical; not rerun"}:
+            continue
+        copy = dict(row)
+        copy["mode"] = mode if mode.startswith("historical_") else f"historical_{mode}"
+        copy["available"] = "historical; not rerun"
+        preserved.append(copy)
+    return preserved
+
+
 def _result_row(level: int, result: dict, baseline_score: float, movement: dict) -> dict:
     score = result["recommended_technical_score"]
     absolute = score - baseline_score
@@ -558,8 +577,9 @@ def _markdown_report(
         f"Level 0 reproduced TechnicalScore **{baseline['recommended_technical_score']:.6f}** "
         f"on {baseline['sample_count']} sessions. The shipped response reported "
         f"{baseline['reported_token_usage']['total_tokens']} tokens.",
-        "The assignment's `0.877011` gate is historical; current main's frozen "
-        "offline test is `0.891111` after the three-state exact-constraint correction.", "",
+        "The assignment's `0.877011` gate and intermediate `0.891111` result "
+        "are historical; current main's frozen offline test is `0.891084` after "
+        "the exact-constraint correction and deterministic SQLite tie-break.", "",
         "## Adversarial levels", "",
         "| Level | Score | Hit@10 | MRR | MTTC | Abs. delta | Rel. delta | Improved | Unchanged | Worsened | Disappeared |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -610,6 +630,12 @@ def _markdown_report(
             f"{row['estimated_cost_per_session']} | "
             f"{row['projected_cost_per_million_sessions']} |"
         )
+    if any(str(row.get("mode", "")).startswith("historical_") for row in cost_rows):
+        lines.extend([
+            "",
+            "The online row is preserved from an earlier authorized run and was not "
+            "repeated during this offline evidence refresh.",
+        ])
     lines.extend([
         "", "LLM-off is always measured with explicit false Agent flags and a reset telemetry state. LLM-on is only run when `--measure-llm-on` is supplied; this prevents an ordinary robustness run from making network calls. Token-price projections remain `not computed` unless explicit prices are supplied.",
         "", "## Previous rejected experiments", "",
@@ -717,6 +743,8 @@ def main() -> None:
     if offline_summary["total_tokens"] == 0:
         offline_summary["estimated_cost_per_session"] = 0.0
         offline_summary["projected_cost_per_million_sessions"] = 0.0
+    cost_path = output_dir / "cost_results.csv"
+    preserved_online = _preserved_online_rows(cost_path)
     cost_rows = [
         {
             "mode": "llm_off",
@@ -766,6 +794,8 @@ def main() -> None:
                 **online_summary,
             }
         )
+    elif preserved_online:
+        cost_rows.extend(preserved_online)
     else:
         cost_rows.append(
             {
@@ -792,7 +822,7 @@ def main() -> None:
     _write_csv(output_dir / "adversarial_results.csv", result_rows)
     _write_csv(output_dir / "adversarial_session_deltas.csv", delta_rows)
     _write_csv(output_dir / "latency_results.csv", latency_rows)
-    _write_csv(output_dir / "cost_results.csv", cost_rows)
+    _write_csv(cost_path, cost_rows)
     (output_dir / "adversarial_examples.json").write_text(
         json.dumps({"examples": examples, "level4_failures": failures}, indent=2) + "\n",
         encoding="utf-8",

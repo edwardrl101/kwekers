@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.adversarial import (
     FROZEN_SCORE,
+    _preserved_online_rows,
     _write_csv,
     constraint_changed,
     estimate_cost,
@@ -17,7 +18,7 @@ from scripts.adversarial import (
 
 class AdversarialTests(unittest.TestCase):
     def test_harness_uses_current_main_frozen_score(self) -> None:
-        self.assertEqual(FROZEN_SCORE, 0.891111)
+        self.assertEqual(FROZEN_SCORE, 0.891084)
 
     def test_level_zero_is_identity(self) -> None:
         message = "I'm looking for Shirts. A key requirement is: 95% Cotton, 5% Spandex."
@@ -88,6 +89,24 @@ class AdversarialTests(unittest.TestCase):
         self.assertEqual(len(loaded), 2)
         self.assertEqual(set(loaded[0]), {"level", "sample_count", "technical_score"})
         self.assertEqual({row["level"] for row in loaded}, {"0", "4"})
+
+    def test_offline_refresh_preserves_successful_online_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cost_results.csv"
+            path.write_text(
+                "mode,available,technical_score\n"
+                "llm_off,yes,0.8\n"
+                "llm_on_level_4,yes,0.4\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                _preserved_online_rows(path),
+                [{
+                    "mode": "historical_llm_on_level_4",
+                    "available": "historical; not rerun",
+                    "technical_score": "0.4",
+                }],
+            )
 
 
 if __name__ == "__main__":

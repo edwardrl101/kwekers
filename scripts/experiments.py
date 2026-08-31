@@ -33,6 +33,7 @@ from evaluator.local_evaluator import (  # noqa: E402
 from src.dialog import route_scenario  # noqa: E402
 from src.retrieval import (  # noqa: E402
     BM25Route, DenseRoute, NgramRoute, extract_constraints, load_catalog,
+    messages_to_bm25_query,
 )
 
 TUNE_SIZE = 140  # of 200 public sessions; CLAUDE.md: 140 tune / 60 holdout
@@ -81,8 +82,8 @@ def build_queries(samples, categories, products, turns: int) -> list[dict]:
         target = str(sample["ground_truth"]["parent_asin"])
         disclosed: set[str] = set()
         boundary_used = False
-        message = initial_message(
-            effective, coarse_category(categories.get(target, [])), disclosed)
+        category = coarse_category(categories.get(target, []))
+        message = initial_message(effective, category, disclosed)
         accumulated = [message]
         for _ in range(turns - 1):
             message, boundary_used = customer_reply(
@@ -91,7 +92,7 @@ def build_queries(samples, categories, products, turns: int) -> list[dict]:
         cases.append({
             "target": target,
             "scenario": sample["scenario_type"],
-            "query": " ".join(accumulated),
+            "query": messages_to_bm25_query(category, accumulated),
         })
     return cases
 
