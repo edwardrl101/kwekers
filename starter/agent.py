@@ -363,10 +363,18 @@ class Agent:
                 seen.add(parent_asin)
                 result.append(parent_asin)
 
-        # If almost the whole catalog has already been shown, allow old items
-        # only as a last-resort schema-preserving fallback. This cannot happen
-        # in the real 50k/10-turn evaluation, but keeps tiny unit-test catalogs
-        # crash-safe.
+        # If almost the whole catalog has already been shown, first try unseen
+        # IDs (not in excluded), then fall back to old items as a last-resort
+        # schema-preserving fallback. This cannot happen in the real
+        # 50k/10-turn evaluation, but keeps tiny unit-test catalogs crash-safe.
+        if len(result) < RECOMMENDATION_COUNT:
+            excluded_set = set(excluded or ())
+            for parent_asin in self._catalog_ids:
+                if parent_asin not in seen and parent_asin not in excluded_set:
+                    seen.add(parent_asin)
+                    result.append(parent_asin)
+                    if len(result) == RECOMMENDATION_COUNT:
+                        return result
         if len(result) < RECOMMENDATION_COUNT:
             for parent_asin in self._catalog_ids:
                 if parent_asin not in result:

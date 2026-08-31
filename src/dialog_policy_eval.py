@@ -139,6 +139,11 @@ def main() -> None:
             subset = [
                 row for row in sessions if str(row.get("sample_id")) in ids
             ]
+            if not subset:
+                raise ValueError(
+                    f"Split '{split_name}' matched 0 sessions. "
+                    "Check that --splits IDs match the dataset sample_ids."
+                )
             policy_report[split_name] = _summarize_sessions(subset)
         report[policy] = policy_report
 
