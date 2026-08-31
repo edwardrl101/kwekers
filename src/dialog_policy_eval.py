@@ -142,7 +142,7 @@ def main() -> None:
             if not subset:
                 raise ValueError(
                     f"Split '{split_name}' matched 0 sessions. "
-                    "Check that --splits IDs match the dataset sample_ids."
+                    "Check that --split-file IDs match the dataset sample_ids."
                 )
             policy_report[split_name] = _summarize_sessions(subset)
         report[policy] = policy_report
