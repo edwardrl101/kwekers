@@ -25,7 +25,7 @@ from pathlib import Path
 
 # ---------------------------------------------------------------- normalization
 
-_KEEP = re.compile(r"[^\w\s$%.,'-]", re.UNICODE)
+_KEEP = re.compile(r"[^\w\s$%.,:;'-]", re.UNICODE)
 _WS = re.compile(r"\s+")
 
 
@@ -35,6 +35,24 @@ def norm(text: str) -> str:
     NFKC maps fullwidth/decorative variants onto plain ASCII (A->A, (1)->1),
     which matters because ~20% of catalog rows carry non-ASCII in
     features/description. Must be applied identically at index and query time.
+
+    Keeps ':' and ';' deliberately: _CONSTRAINT_MARKERS below matches phrases
+    like "a key requirement is:" and extract_constraints() splits multi-item
+    replies ("what matters is: c1; c2") on ';' - both need those characters
+    to survive normalization, or the marker regexes silently never match and
+    multi-constraint replies never split (found bug: this function used to
+    strip both characters before either check ran, so extract_constraints()
+    always fell through to strip_boilerplate() on the whole message instead
+    of isolating per-constraint text - see tests/test_retrieval.py). FTS5's
+    unicode61 tokenizer and _TOKEN below both already treat ':' and ';' as
+    separators like any other punctuation, so keeping them here does not
+    change what gets indexed or what content_terms() extracts - only whether
+    the marker/split logic can see them. Confirmed inert on the shipped
+    Agent's score: starter/agent.py builds the BM25 query from src.dialog's
+    own (unaffected) constraint extraction before this function ever sees it,
+    so this only fixes the bug for callers that hand BM25Route raw templated
+    text directly - scripts/experiments.py, scripts/adversarial.py,
+    scripts/run_agent.py, and this module's own __main__.
     """
     if not text:
         return ""
@@ -204,9 +222,26 @@ class BM25Route:
             return []
         weights = ", ".join(str(w) for w in self.WEIGHTS)
         try:
+            # ORDER BY s alone leaves exact bm25() ties resolved by whatever
+            # order SQLite's query plan happens to visit rows in - not
+            # guaranteed stable across SQLite versions/builds, and if a tie
+            # sits exactly at LIMIT it can silently change WHICH rows are
+            # returned, not just their order. This is not theoretical: on the
+            # 200-session public set it changes public_0052 (intent_override)
+            # from rank 7 to rank 8 for the same turn-3 hit, moving the
+            # official score from 0.891111 to 0.891084 (isolated with
+            # tests/test_frozen_baseline.py, one variable at a time - see
+            # commit message / Member 4's Day 4 notes). That 0.000027 delta
+            # is the frozen score silently depending on incidental SQLite
+            # ordering today; parent_asin as a secondary key makes both the
+            # order and the LIMIT cutoff deterministic across environments,
+            # which is what "must reproduce exactly" actually requires. Same
+            # bug class M3 already fixed in src/exact.py (commit dc7b5fd,
+            # "sort exact intersections before limiting to eliminate
+            # process-dependent subsets").
             rows = self.connection.execute(
                 f"SELECT parent_asin, bm25(products, {weights}) AS s "
-                "FROM products WHERE products MATCH ? ORDER BY s LIMIT ?",
+                "FROM products WHERE products MATCH ? ORDER BY s, parent_asin LIMIT ?",
                 (expression, limit),
             ).fetchall()
         except sqlite3.OperationalError:
@@ -388,9 +423,16 @@ def _top_k(asins, scores, limit: int) -> list[tuple[str, float]]:
     limit = min(limit, len(scores))
     if limit <= 0:
         return []
-    idx = np.argpartition(-scores, limit - 1)[:limit]
-    idx = idx[np.argsort(-scores[idx])]
-    return [(str(asins[i]), float(scores[i])) for i in idx if scores[i] > 0]
+    # Full deterministic sort: primary key score descending, secondary key
+    # asin ascending (np.lexsort's LAST key is primary). The previous
+    # argpartition+argsort combo is allowed to break ties arbitrarily at
+    # BOTH the partition boundary and within the sorted slice, same risk as
+    # BM25Route._run above. Confirmed inert on the shipped Agent's score
+    # (dense/ngram are not in the default fusion path - see
+    # tests/test_frozen_baseline.py), so this only hardens the two routes
+    # exercised by the Day 4 adversarial harness and offline experiments.
+    order = np.lexsort((asins, -scores))[:limit]
+    return [(str(asins[i]), float(scores[i])) for i in order if scores[i] > 0]
 
 
 if __name__ == "__main__":
