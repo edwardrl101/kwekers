@@ -131,6 +131,13 @@ package or network connection is required. See
 `docs/demo-repository-audit.md` for the pre-implementation pipeline audit and
 the observability boundary used by the demo.
 
+The live system has two modes. **Free Shop** accepts manually typed messages.
+**Evaluation Replay** automatically runs one of four labeled public sessions
+using the evaluator's own `initial_message()` and `customer_reply()` functions.
+The replay displays the target to the audience but never passes it to the
+Agent, highlights the matching recommendation, and stops immediately on the
+first valid hit or after turn 10.
+
 ## Model Choice and Cost
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
