@@ -151,6 +151,7 @@ class DemoApp:
             response["session_id"] = sid
             response["recommendations"] = recommendations
             ask_attribute = response.get("ask_attribute")
+            response_message = str(response.get("message") or "").strip()
             fallback_questions = {
                 "material": "Do you have a preferred material?",
                 "color": "Do you have a preferred color?",
