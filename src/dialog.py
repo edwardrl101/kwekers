@@ -79,7 +79,7 @@ SAFE_ASK_ATTRIBUTES = frozenset((*USEFUL_CLASSIFIED_ATTRIBUTES, "other"))
 # Message-shape detection.
 KEY_REQUIREMENT_RE = re.compile(r"\bA key requirement is:\s*(.+?)(?:\.\s*$|$)", re.I)
 MATTERS_RE = re.compile(r"\bFor that, what matters is:\s*(.+?)(?:\.\s*$|$)", re.I)
-WHAT_I_NEED_RE = re.compile(r"\bWhat I need is:\s*(.+?)(?:\.\s*$|$)", re.I)
+WHAT_I_NEED_RE = re.compile(r"\bWhat I need is:\s*([^\n.]+)", re.I)
 STILL_EXPLORING_RE = re.compile(r"\bstill exploring\b", re.I)
 BOUNDARY_REPLY_RE = re.compile(r"\bI don't have a preference for\b", re.I)
 NO_ADDITIONAL_RE = re.compile(r"\bI don't have an additional preference for\s+([a-z_]+)\b", re.I)
