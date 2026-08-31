@@ -16,4 +16,4 @@ This audit records the source-of-truth review performed before building the demo
 
 ## Minimum integration selected
 
-`demo_server.py` serves three static files and exposes `POST /api/chat` and `POST /api/reset`. It calls the real production Agent. Request-scoped wrappers observe the query, route results, and fused order without a second route call or any ranking mutation; catalog metadata is joined only after the response. No dependency was added and evaluator behavior is unchanged.
+`demo_server.py` serves the static demo assets under `demo/` (HTML/CSS/JS) and exposes `POST /api/chat` and `POST /api/reset`. It calls the real production Agent. Request-scoped wrappers observe the query, route results, and fused order without a second route call or any ranking mutation; catalog metadata is joined only after the response. No dependency was added and evaluator behavior is unchanged.
