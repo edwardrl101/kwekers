@@ -223,7 +223,7 @@ def cmd_fusion(cases: list[dict], routes: RouteCache, args) -> None:
 
     dn_lists = lists.get("dense", [[] for _ in cases])
     combos = {
-        "rrf bm25+ngram equal": (1.0, 1.0, 0.0),   
+        "rrf bm25+ngram equal": (1.0, 1.0, 0.0),
         "rrf bm25+ngram heavy": (3.0, 1.0, 0.0),
         "rrf equal (all 3)":    (1.0, 1.0, 1.0),
         "rrf bm25-heavy":       (3.0, 1.0, 1.0),
