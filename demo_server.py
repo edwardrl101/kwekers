@@ -21,6 +21,12 @@ ROOT = Path(__file__).resolve().parent
 DEMO = ROOT / "demo"
 CATALOG = ROOT / "data" / "catalog.jsonl"
 LOCK = threading.RLock()
+REPLAY_PRESETS = (
+    {"sample_id": "public_0008", "label": "Buying scenario"},
+    {"sample_id": "public_0012", "label": "Browsing scenario"},
+    {"sample_id": "public_0003", "label": "Intent override scenario"},
+    {"sample_id": "public_0041", "label": "Boundary scenario"},
+)
 
 
 def _constraint(item: object) -> dict:
@@ -52,6 +58,13 @@ class DemoApp:
     def __init__(self) -> None:
         self.agent = Agent(CATALOG)
         self.turns: dict[str, int] = {}
+        from evaluator.local_evaluator import load_jsonl
+
+        self.public_samples = {
+            str(item["sample_id"]): item
+            for item in load_jsonl(ROOT / "data" / "public_set.jsonl")
+        }
+        self.replays: dict[str, dict] = {}
 
     def reset(self, session_id: str | None = None) -> dict:
         sid = session_id or uuid.uuid4().hex[:12]
@@ -197,6 +210,118 @@ class DemoApp:
             }
             return response
 
+    def replay_start(self, sample_id: str) -> dict:
+        """Start one evaluator-faithful labeled replay without leaking target to Agent."""
+        from evaluator.local_evaluator import (
+            coarse_category,
+            initial_message,
+            materialize_hidden_fields,
+        )
+
+        allowed = {item["sample_id"] for item in REPLAY_PRESETS}
+        if sample_id not in allowed or sample_id not in self.public_samples:
+            raise ValueError("unknown replay preset")
+        with LOCK:
+            sample = self.public_samples[sample_id]
+            target = str(sample["ground_truth"]["parent_asin"])
+            product = self.agent._catalog.get(target)
+            if not product:
+                raise ValueError("replay target is unavailable in the catalog")
+            card, behavior = materialize_hidden_fields(sample, self.agent._catalog)
+            effective = {**sample, "intent_card": card, "behavior": behavior}
+            disclosed: set[str] = set()
+            message = initial_message(
+                effective,
+                coarse_category([str(x) for x in product.get("categories") or []]),
+                disclosed,
+            )
+            sid = f"replay_{sample_id}_{uuid.uuid4().hex[:8]}"
+            self.agent.reset(sid, sample.get("user_profile", {}))
+            self.turns[sid] = 0
+            self.replays[sid] = {
+                "sample": effective,
+                "target": target,
+                "disclosed": disclosed,
+                "boundary_used": False,
+                "override_applied": sample["scenario_type"] != "intent_override",
+                "message": message,
+                "done": False,
+            }
+            return {
+                "session_id": sid,
+                "sample_id": sample_id,
+                "scenario": sample["scenario_type"],
+                "next_customer_message": message,
+                "target": {
+                    "parent_asin": target,
+                    "title": product.get("title"),
+                    "price": product.get("price"),
+                    "rating": product.get("average_rating"),
+                },
+                "note": "Target is visible to the audience only and is never passed to Agent.",
+            }
+
+    def replay_step(self, session_id: str) -> dict:
+        """Advance exactly one turn using the evaluator's message-generation rules."""
+        from evaluator.local_evaluator import MAX_TURNS, customer_reply
+
+        with LOCK:
+            replay = self.replays.get(str(session_id))
+            if replay is None:
+                raise ValueError("unknown replay session")
+            if replay["done"]:
+                raise ValueError("replay session is already complete")
+            message = replay["message"]
+            response = self.chat({"session_id": session_id, "message": message})
+            turn = int(response["debug"]["turn"])
+            ranked = [str(item["parent_asin"]) for item in response["recommendations"]]
+            target = replay["target"]
+            rank = (
+                ranked.index(target) + 1
+                if replay["override_applied"] and target in ranked
+                else None
+            )
+            hit = rank is not None
+            done = hit or turn >= MAX_TURNS
+            next_message = None
+            if not done:
+                sample = replay["sample"]
+                override = sample.get("behavior", {}).get("override") or {}
+                if (
+                    not replay["override_applied"]
+                    and turn + 1 == int(override.get("turn", 3))
+                ):
+                    replay["override_applied"] = True
+                    new_value = str(override.get("new_value", ""))
+                    if new_value:
+                        replay["disclosed"].add(new_value)
+                    next_message = str(
+                        override.get(
+                            "message",
+                            "Actually, please ignore my earlier preference.",
+                        )
+                    )
+                else:
+                    next_message, replay["boundary_used"] = customer_reply(
+                        sample,
+                        response.get("ask_attribute"),
+                        replay["disclosed"],
+                        replay["boundary_used"],
+                    )
+                replay["message"] = next_message
+            replay["done"] = done
+            return {
+                "session_id": session_id,
+                "turn": turn,
+                "customer_message": message,
+                "agent_response": response,
+                "hit": hit,
+                "target_rank": rank,
+                "done": done,
+                "outcome": "target_found" if hit else ("turn_limit" if done else "continue"),
+                "next_customer_message": next_message,
+            }
+
 
 APP: DemoApp | None = None
 
@@ -220,6 +345,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(200, APP.chat(payload))
             elif self.path == "/api/reset":
                 self._json(200, APP.reset(payload.get("session_id")))
+            elif self.path == "/api/replay/start":
+                self._json(200, APP.replay_start(str(payload.get("sample_id", ""))))
+            elif self.path == "/api/replay/step":
+                self._json(200, APP.replay_step(str(payload.get("session_id", ""))))
             else:
                 self._json(404, {"error": "not found"})
         except (ValueError, json.JSONDecodeError) as error:
@@ -231,7 +360,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/config":
-            self._json(200, {"catalog_size": len(APP.agent._catalog), "routes": {"bm25": bool(APP.agent._bm25_route), "exact": bool(APP.agent._exact_route), "bucket": bool(APP.agent._bucket_route), "dense": bool(APP.agent._dense_route)}})
+            self._json(200, {"catalog_size": len(APP.agent._catalog), "routes": {"bm25": bool(APP.agent._bm25_route), "exact": bool(APP.agent._exact_route), "bucket": bool(APP.agent._bucket_route), "dense": bool(APP.agent._dense_route)}, "replay_presets": REPLAY_PRESETS})
             return
         target = DEMO / ("index.html" if path == "/" else path.lstrip("/"))
         try:
