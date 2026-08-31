@@ -11,7 +11,9 @@ from starter.agent import Agent
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SCORE = 0.891111
+# The deterministic SQLite ASIN tie-break moves public_0052 from rank 7 to 8,
+# without changing its hit turn. This is the current production oracle.
+EXPECTED_SCORE = 0.891084
 
 
 class FrozenOfflineBaselineTest(unittest.TestCase):

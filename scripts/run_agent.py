@@ -28,7 +28,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from evaluator.local_evaluator import catalog_index, evaluate, load_jsonl  # noqa: E402
 from src.rescore import ConditionalRescorer  # noqa: E402
-from src.retrieval import BM25Route, DenseRoute, load_catalog  # noqa: E402
+from src.buckets import extract_category_phrase  # noqa: E402
+from src.retrieval import (  # noqa: E402
+    BM25Route,
+    DenseRoute,
+    load_catalog,
+    messages_to_bm25_query,
+)
 
 TOP_K = 10
 OVERRIDE_PHRASE = "ignore my earlier preference"
@@ -53,7 +59,7 @@ class Agent:
 
     def reset(self, session_id: str, user_profile: dict) -> None:
         self.rescorer.reset(session_id)
-        self._state[session_id] = {"text": [], "shown": set()}
+        self._state[session_id] = {"text": [], "shown": set(), "category": None}
 
     def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
         state = self._state[session_id]
@@ -62,7 +68,12 @@ class Agent:
             state["shown"].clear()  # override blackout is over, allow re-recommendation
 
         state["text"].append(user_message)  # never wipe - target doesn't change across override
-        joined = " ".join(state["text"])
+        category = extract_category_phrase(user_message)
+        if category:
+            state["category"] = category
+        joined = messages_to_bm25_query(
+            state.get("category"), state["text"], fallback=user_message
+        )
 
         pool = [asin for asin, _ in self.bm25.query(joined, limit=500)]
         ranked = self.rescorer.rescore(session_id, pool, joined, turn)

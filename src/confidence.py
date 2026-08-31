@@ -1,13 +1,9 @@
 """Read-only confidence layer: softmax + normalized entropy over the fused pool.
 
-Day 4 / Member 4. This is a standalone, pure-function counterpart to the
-softmax-entropy math that already lives inline in
-``starter.agent.Agent._confidence_from_routes`` / ``_fuse_bm25_pool``. It does
-not replace that code (``starter/agent.py`` is Member 1's file), it gives the
-same computation a tested, independently importable home so measurement
-scripts (paired bootstrap, confidence-by-turn) don't have to reach into
-Agent's private methods, and so a future integration can import this instead
-of maintaining two copies of the same formula.
+Day 4 / Member 4. This module is the single implementation used by
+``starter.agent.Agent._confidence_from_routes`` and by offline measurement
+scripts. Keeping the computation here prevents the production integration and
+confidence diagnostics from drifting apart.
 
 Contract: every function here is a pure function of its arguments. Nothing in
 this module reads or writes Agent/session state, and nothing it returns is

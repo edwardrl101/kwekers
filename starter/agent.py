@@ -307,45 +307,21 @@ class Agent:
         return [parent_asin for parent_asin, _score, _rank in fused]
 
     def _confidence_from_routes(self, route_results: RouteResults) -> float:
-        """Compute normalized softmax confidence without changing ranking."""
-        bm25_pool: list[str] = []
-        seen: set[str] = set()
-        for parent_asin, _score in route_results.get("bm25", []):
-            if parent_asin and parent_asin not in seen:
-                seen.add(parent_asin)
-                bm25_pool.append(parent_asin)
-            if len(bm25_pool) >= ROUTE_CANDIDATE_LIMIT:
-                break
-        if not bm25_pool:
+        """Delegate read-only confidence to Member 4's integrated module."""
+        try:
+            from src.confidence import confidence_from_route_results
+
+            return confidence_from_route_results(
+                route_results,
+                exact_match_boost=self.exact_match_boost,
+                bucket_match_boost=self.bucket_match_boost,
+                dense_similarity_weight=self.dense_similarity_weight,
+                pool_limit=ROUTE_CANDIDATE_LIMIT,
+            )
+        except Exception:
+            # Confidence is presentation-only. A diagnostic failure must never
+            # affect ranking, recommendation selection, or response validity.
             return 0.0
-        if len(bm25_pool) == 1:
-            return 1.0
-
-        exact_ids = {item for item, _score in route_results.get("exact", [])}
-        bucket_ids = {item for item, _score in route_results.get("bucket", [])}
-        dense_scores = self._normalize_scores(route_results.get("dense", []))
-        scores: list[float] = []
-        count = len(bm25_pool)
-        for rank, parent_asin in enumerate(bm25_pool, start=1):
-            score = self._normalize_bm25_rank(rank, count)
-            if parent_asin in exact_ids:
-                score += self.exact_match_boost
-            if parent_asin in bucket_ids:
-                score += self.bucket_match_boost
-            score += self.dense_similarity_weight * dense_scores.get(parent_asin, 0.0)
-            scores.append(score)
-
-        maximum = max(scores)
-        weights = [math.exp(score - maximum) for score in scores]
-        total = sum(weights)
-        probabilities = [weight / total for weight in weights]
-        entropy = -sum(
-            probability * math.log(probability)
-            for probability in probabilities
-            if probability > 0
-        )
-        normalized_entropy = entropy / math.log(len(probabilities))
-        return max(0.0, min(1.0, 1.0 - normalized_entropy))
 
     def _update_retrieval_context(
         self,
@@ -419,14 +395,26 @@ class Agent:
                 active_constraints = []
         session["active_constraints"] = active_constraints
 
-        parts: list[str] = []
         stored_category = session.get("category")
-        if isinstance(stored_category, str) and stored_category.strip():
-            parts.append(stored_category.strip())
-        parts.extend(value.strip() for value in active_constraints if value.strip())
+        query_constraints = list(active_constraints)
         if self.enable_llm_override and override_detected and not active_constraints:
-            parts.append(user_message.strip())
-        return " ".join(parts) or user_message
+            query_constraints.append(user_message)
+        try:
+            from src.retrieval import compose_bm25_query
+
+            return compose_bm25_query(
+                stored_category if isinstance(stored_category, str) else None,
+                query_constraints,
+                fallback=user_message,
+            )
+        except Exception:
+            parts = [
+                stored_category.strip()
+                if isinstance(stored_category, str) and stored_category.strip()
+                else ""
+            ]
+            parts.extend(value.strip() for value in query_constraints if value.strip())
+            return " ".join(part for part in parts if part) or user_message
 
     def _random_fill(self, candidates: list[str], session: dict, turn: int) -> list[str]:
         """Pad route results reproducibly without repeating session history."""

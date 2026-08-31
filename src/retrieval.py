@@ -22,6 +22,7 @@ import re
 import sqlite3
 import unicodedata
 from pathlib import Path
+from typing import Iterable
 
 # ---------------------------------------------------------------- normalization
 
@@ -51,8 +52,8 @@ def norm(text: str) -> str:
     Agent's score: starter/agent.py builds the BM25 query from src.dialog's
     own (unaffected) constraint extraction before this function ever sees it,
     so this only fixes the bug for callers that hand BM25Route raw templated
-    text directly - scripts/experiments.py, scripts/adversarial.py,
-    scripts/run_agent.py, and this module's own __main__.
+    text directly. Production and the maintained experiment harnesses now use
+    compose_bm25_query()/messages_to_bm25_query() instead.
     """
     if not text:
         return ""
@@ -154,6 +155,64 @@ def extract_constraints(message: str) -> list[str]:
                 if chunk:
                     found.append(chunk)
     return found or [strip_boilerplate(message)]
+
+
+def compose_bm25_query(
+    category: str | None,
+    constraints: Iterable[str],
+    *,
+    fallback: str = "",
+) -> str:
+    """Build the production BM25 representation: category, then constraints.
+
+    Empty parts are ignored and exact duplicate normalized phrases are kept
+    only once. The returned text retains the caller's spelling; BM25Route
+    applies ``norm()`` at query time.
+    """
+    parts: list[str] = []
+    seen: set[str] = set()
+    for value in ([category] if category else []):
+        text = str(value).strip()
+        key = norm(text)
+        if text and key and key not in seen:
+            seen.add(key)
+            parts.append(text)
+    for value in constraints:
+        text = str(value).strip()
+        key = norm(text)
+        if text and key and key not in seen:
+            seen.add(key)
+            parts.append(text)
+    return " ".join(parts) or fallback
+
+
+def messages_to_bm25_query(
+    category: str | None,
+    messages: Iterable[str],
+    *,
+    fallback: str = "",
+) -> str:
+    """Adapt evaluator-style messages to the same representation as Agent.
+
+    ``extract_constraints`` can return the opening category together with a
+    suffix when no explicit constraint marker is present. Strip that known
+    prefix before composing the final category-plus-constraints query.
+    """
+    category_key = norm(category or "")
+    constraints: list[str] = []
+    for message in messages:
+        for value in extract_constraints(message):
+            cleaned = value.strip()
+            cleaned_key = norm(cleaned)
+            if category_key and cleaned_key == category_key:
+                continue
+            if category_key and cleaned_key.startswith(category_key):
+                remainder = cleaned[len(category_key):]
+                if remainder[:1] in " .,;:-":
+                    cleaned = remainder.strip(" .,;:-")
+            if cleaned:
+                constraints.append(cleaned)
+    return compose_bm25_query(category, constraints, fallback=fallback)
 
 
 def strip_boilerplate(message: str) -> str:

@@ -1,6 +1,2 @@
 numpy>=2.1,<3
 scikit-learn>=1.7,<2
-
-# optional: only needed for DenseRoute (bge-small). Heavy (pulls torch+transformers).
-# comment out for offline/no-network final scoring if dense route isn't used.
-sentence-transformers>=6.0,<7

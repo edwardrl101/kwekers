@@ -5,6 +5,7 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src import confidence
 from starter.agent import Agent
@@ -67,9 +68,7 @@ class NormalizedConfidenceTest(unittest.TestCase):
 
 
 class FusedPoolScoresParityTest(unittest.TestCase):
-    """Proves src/confidence.py reproduces starter/agent.py's private method
-    exactly, so the two can never silently drift apart, and a future swap of
-    the inline implementation for an import from this module is a no-op."""
+    """Proves Agent delegates confidence to Member 4's module."""
 
     def _agent(self, directory: Path) -> Agent:
         path = directory / "catalog.jsonl"
@@ -77,7 +76,7 @@ class FusedPoolScoresParityTest(unittest.TestCase):
         path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
         return Agent(path, enable_dense=False)
 
-    def test_matches_agent_private_implementation_exactly(self) -> None:
+    def test_agent_delegates_to_member_four_module(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             agent = self._agent(Path(directory))
             route_results = {
@@ -87,17 +86,20 @@ class FusedPoolScoresParityTest(unittest.TestCase):
                 "dense": [("A007", 0.9), ("A000", 0.1)],
             }
 
-            mine = confidence.confidence_from_route_results(
+            with patch(
+                "src.confidence.confidence_from_route_results", return_value=0.37
+            ) as integrated:
+                self.assertEqual(agent._confidence_from_routes(route_results), 0.37)
+
+            integrated.assert_called_once_with(
                 route_results,
                 exact_match_boost=agent.exact_match_boost,
                 bucket_match_boost=agent.bucket_match_boost,
                 dense_similarity_weight=agent.dense_similarity_weight,
+                pool_limit=500,
             )
-            theirs = agent._confidence_from_routes(route_results)
 
-            self.assertEqual(mine, theirs)
-
-    def test_matches_with_nonzero_dense_weight(self) -> None:
+    def test_integrated_result_matches_pure_module_with_nonzero_dense_weight(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             agent = Agent(
                 (Path(directory) / "catalog.jsonl"),
@@ -141,7 +143,8 @@ class FrozenBaselineInvarianceTest(unittest.TestCase):
     a single unit in the last decimal place. If it does, the layer is not
     read-only and that is a bug, not a tuning opportunity.
 
-    Verified current frozen value (see docs/day4-member1-guide.md): 0.891111.
+    Verified current frozen value: 0.891084 after the deterministic SQLite
+    ASIN tie-break.
     The 0.877011 figure in CLAUDE.md's Day 3 snapshot predates the exact-route
     three-state constraint fix and is superseded on disk.
     """
