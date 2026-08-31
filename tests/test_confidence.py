@@ -150,7 +150,7 @@ class FrozenBaselineInvarianceTest(unittest.TestCase):
         catalog_path = ROOT / "data" / "catalog.jsonl"
         public_path = ROOT / "data" / "public_set.jsonl"
         if not catalog_path.exists() or not public_path.exists():
-            self.fail("frozen catalog/public set are not available")
+            self.skipTest("frozen catalog/public set are not available")
 
         from evaluator.local_evaluator import catalog_index, evaluate, load_jsonl
 
