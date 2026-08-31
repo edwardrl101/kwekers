@@ -473,6 +473,103 @@ class AgentShellTest(unittest.TestCase):
             self.assertNotIn("Department: Womens", overridden)
             self.assertIn("wool", overridden)
 
+    def test_other_twice_then_rotate_policy_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=40),
+                enable_dense=False,
+                question_policy_mode="other_twice_rotate",
+            )
+            agent._route_bucket = lambda *_: []
+            agent._route_exact = lambda *_: []
+            agent._route_dense = lambda *_: []
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(40)
+            ]
+            agent.reset("session", {})
+
+            asks = [
+                agent.respond("session", "No additional text.", turn, 10)["ask_attribute"]
+                for turn in range(1, 7)
+            ]
+            self.assertEqual(
+                asks,
+                ["other", "other", "feature", "material", "color", "style"],
+            )
+            self.assertNotIn(None, asks)
+            self.assertNotIn("brand", asks)
+            self.assertNotIn("category", asks)
+
+    def test_always_other_policy_is_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=40),
+                enable_dense=False,
+                question_policy_mode="always_other",
+            )
+            agent.reset("session", {})
+            asks = [
+                agent.respond("session", "No additional text.", turn, 10)["ask_attribute"]
+                for turn in range(1, 6)
+            ]
+            self.assertEqual(asks, ["other"] * 5)
+
+    def test_fresh_candidates_and_override_reset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=40),
+                enable_dense=False,
+            )
+            agent._route_bucket = lambda *_: []
+            agent._route_exact = lambda *_: []
+            agent._route_dense = lambda *_: []
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(40)
+            ]
+            agent.reset("session", {})
+
+            first = {
+                item["parent_asin"]
+                for item in agent.respond(
+                    "session",
+                    "I'm looking for Shirts. Department: Womens",
+                    1,
+                    10,
+                )["recommendations"]
+            }
+            second = {
+                item["parent_asin"]
+                for item in agent.respond(
+                    "session",
+                    "For that, what matters is: cotton; color: black.",
+                    2,
+                    10,
+                )["recommendations"]
+            }
+            after_override = {
+                item["parent_asin"]
+                for item in agent.respond(
+                    "session",
+                    "Actually, ignore my earlier preference. What I need is: wool.",
+                    3,
+                    10,
+                )["recommendations"]
+            }
+
+            self.assertTrue(first.isdisjoint(second))
+            self.assertEqual(first, after_override)
+
+            slot_state = agent._sessions["session"]["slot_state"]
+            self.assertTrue(
+                any(item.text == "Department: Womens" for item in slot_state.soft_constraints)
+            )
+            self.assertTrue(
+                any(item.text == "wool" and item.active for item in slot_state.constraints)
+            )
+            self.assertTrue(
+                any(item.text == "cotton" and item.active for item in slot_state.constraints)
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,7 @@ class Agent:
         enable_llm_override: bool | None = None,
         enable_llm_message: bool | None = None,
         enable_confidence: bool | None = None,
+        question_policy_mode: str = "always_other",
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.enable_dense = enable_dense
@@ -59,6 +60,7 @@ class Agent:
         self.enable_confidence = self._resolve_feature_flag(
             "ENABLE_CONFIDENCE", enable_confidence, ENABLE_CONFIDENCE
         )
+        self.question_policy_mode = question_policy_mode
         self.dense_cache_path = self.catalog_path.with_name("dense_cache.npz")
         self._catalog = self._load_catalog()
         self._catalog_ids = list(self._catalog)
@@ -451,7 +453,9 @@ class Agent:
             else "missing-session"
         )
         seed_text = f"{RANDOM_FILL_SEED}\0{seed_key}\0{turn}"
-        seed = int.from_bytes(hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big")
+        seed = int.from_bytes(
+            hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big"
+        )
         rng = random.Random(seed)
         available_count = len(self._catalog_ids) - len(excluded & self._catalog_id_set)
         while (
@@ -462,26 +466,74 @@ class Agent:
             if parent_asin not in excluded and parent_asin not in seen:
                 seen.add(parent_asin)
                 result.append(parent_asin)
-        if len(result) == RECOMMENDATION_COUNT:
-            return result
 
-        # The real catalog has 50,000 IDs. Placeholders preserve the response
-        # schema and exact length if that file is unavailable or too small.
+        # If almost the whole catalog has already been shown, first try unseen
+        # IDs (not in excluded), then fall back to old items as a last-resort
+        # schema-preserving fallback. This cannot happen in the real
+        # 50k/10-turn evaluation, but keeps tiny unit-test catalogs crash-safe.
+        if len(result) < RECOMMENDATION_COUNT:
+            excluded_set = set(excluded or ())
+            for parent_asin in self._catalog_ids:
+                if parent_asin not in seen and parent_asin not in excluded_set:
+                    seen.add(parent_asin)
+                    result.append(parent_asin)
+                    if len(result) == RECOMMENDATION_COUNT:
+                        return result
+        if len(result) < RECOMMENDATION_COUNT:
+            for parent_asin in self._catalog_ids:
+                if parent_asin not in result:
+                    result.append(parent_asin)
+                    if len(result) == RECOMMENDATION_COUNT:
+                        return result
+
         placeholder_index = 0
         while len(result) < RECOMMENDATION_COUNT:
             placeholder = f"__missing_catalog_{placeholder_index}"
             placeholder_index += 1
-            if placeholder not in seen:
-                seen.add(placeholder)
+            if placeholder not in result:
                 result.append(placeholder)
         return result
+
+    def _choose_ask_attribute(self, session: dict) -> str:
+        """Choose a safe non-null attribute using Sheng Yan's measured policy."""
+        try:
+            from src.dialog import QuestionPolicy, SAFE_ASK_ATTRIBUTES
+
+            slot_state = session.get("slot_state")
+            if slot_state is None:
+                return "other"
+            ask_attribute = QuestionPolicy(self.question_policy_mode).next_attribute(
+                slot_state
+            )
+            if ask_attribute not in SAFE_ASK_ATTRIBUTES:
+                return "other"
+            return ask_attribute
+        except Exception:
+            return "other"
+
+    @staticmethod
+    def _question_message(ask_attribute: str) -> str:
+        """Keep the customer-facing question aligned with ask_attribute."""
+        prompts = {
+            "other": "I am refining the shortlist. What else should I consider?",
+            "feature": "Which product feature matters most to you?",
+            "material": "Do you have a material preference?",
+            "color": "Do you have a color preference?",
+            "style": "Is there a style or fit you prefer?",
+            "size": "Do you have a size or width requirement?",
+            "budget": "What budget should I work within?",
+            "use_case": "What will you mainly use it for?",
+        }
+        return prompts.get(
+            ask_attribute, "I am refining the shortlist. What else should I consider?"
+        )
 
     def _is_override_message(self, user_message: str) -> bool:
         """Recognize the evaluator override and close private paraphrases."""
         try:
-            from src.dialog import OVERRIDE_RE
+            from src.dialog import is_override_message
 
-            if OVERRIDE_RE.search(user_message):
+            if is_override_message(user_message):
                 return True
         except Exception:
             if "ignore my earlier preference" in user_message.lower():
@@ -504,6 +556,7 @@ class Agent:
     ) -> dict:
         """Return a valid response even if session state or a route is broken."""
         customer_message = "I am refining the shortlist. What else should I consider?"
+        ask_attribute = "other"
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
         telemetry_start = 0
         llm_enabled = (
@@ -521,7 +574,11 @@ class Agent:
         try:
             key = str(session_id)
             session = self._sessions.get(
-                key, {"seed_key": "missing-session", "user_profile": {}}
+                key, {
+                    "seed_key": "missing-session",
+                    "user_profile": {},
+                    "shown": set(),
+                },
             )
             safe_message = user_message if isinstance(user_message, str) else ""
             safe_turn = turn if isinstance(turn, int) else 0
@@ -547,12 +604,14 @@ class Agent:
                 session["confidence"] = self._confidence_from_routes(route_results)
             if self.enable_freshness:
                 shown.update(parent_asins)
+            ask_attribute = self._choose_ask_attribute(session)
             slot_state = session.get("slot_state")
             if slot_state is not None:
                 try:
-                    slot_state.record_ask("other")
+                    slot_state.record_ask(ask_attribute)
                 except Exception:
-                    pass
+                    ask_attribute = "other"
+            customer_message = self._question_message(ask_attribute)
             if self.enable_confidence or self.enable_llm_message:
                 try:
                     from src.explain import explain
@@ -574,6 +633,8 @@ class Agent:
                     pass
         except Exception:
             parent_asins = self._random_fill([], {"seed_key": "error"}, 0)
+            ask_attribute = "other"
+            customer_message = self._question_message(ask_attribute)
 
         if llm_enabled:
             try:
@@ -593,7 +654,7 @@ class Agent:
 
         return {
             "message": customer_message,
-            "ask_attribute": "other",
+            "ask_attribute": ask_attribute,
             "recommendations": [
                 {"parent_asin": parent_asin} for parent_asin in parent_asins
             ],

@@ -116,6 +116,21 @@ Efficiency = clip((11 - MTTC) / 10, 0, 1)
 
 Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
 
+## Run the Interactive Demo
+
+The presentation dashboard calls the current production `Agent` and visualizes
+its real intermediate retrieval and ranking decisions:
+
+```bash
+python3 demo_server.py
+```
+
+Open `http://127.0.0.1:8000`. The first launch builds the offline indexes over
+the local 50,000-product catalog and may take several seconds. No additional
+package or network connection is required. See
+`docs/demo-repository-audit.md` for the pre-implementation pipeline audit and
+the observability boundary used by the demo.
+
 ## Model Choice and Cost
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.

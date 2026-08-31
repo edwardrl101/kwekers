@@ -1,0 +1,236 @@
+{
+  "examples": [
+    {
+      "level": 1,
+      "sample_id": "public_0001",
+      "turn": 1,
+      "original_message": "I'm looking for Jewelry Necklaces. A key requirement is: Material:alloy.",
+      "perturbed_message": "Please help me find Jewelry Necklaces. A key requirement is: Material:alloy!",
+      "constraint_changed": false
+    },
+    {
+      "level": 1,
+      "sample_id": "public_0002",
+      "turn": 1,
+      "original_message": "I'm looking for Accessories Belts. Buckle closure",
+      "perturbed_message": "Could you show me Accessories Belts. Buckle closure",
+      "constraint_changed": false
+    },
+    {
+      "level": 1,
+      "sample_id": "public_0002",
+      "turn": 2,
+      "original_message": "For that, what matters is: leather; 100% Leather.",
+      "perturbed_message": "For that, what matters is: leather; 100% Leather...",
+      "constraint_changed": false
+    },
+    {
+      "level": 1,
+      "sample_id": "public_0002",
+      "turn": 3,
+      "original_message": "Actually, ignore my earlier preference. What I need is: leather.",
+      "perturbed_message": "Actually, ignore my earlier preference. What I need is: leather!",
+      "constraint_changed": false
+    },
+    {
+      "level": 1,
+      "sample_id": "public_0003",
+      "turn": 1,
+      "original_message": "I'm looking for Watches Wrist Watches. Stainless Steel Band",
+      "perturbed_message": "Could you show me Watches Wrist Watches. Stainless Steel Band",
+      "constraint_changed": false
+    },
+    {
+      "level": 2,
+      "sample_id": "public_0001",
+      "turn": 1,
+      "original_message": "I'm looking for Jewelry Necklaces. A key requirement is: Material:alloy.",
+      "perturbed_message": "Please help me find Jewelry Necklaces. The important part is: Material:alloy!",
+      "constraint_changed": false
+    },
+    {
+      "level": 2,
+      "sample_id": "public_0001",
+      "turn": 2,
+      "original_message": "For that, what matters is: Triple Moon Pentagram Symbol; The Triple Moon represents the Phases of the Moon which are linked to the three aspects of the Goddess and the phases of the Life of Women.The Pentagram representing the holistic r.",
+      "perturbed_message": "The important part is: Triple Moon Pentagram Symbol; The Triple Moon represents the Phases of the Moon which are linked to the three aspects of the Goddess and the phases of the Life of Women.The Pentagram representing the holistic r...",
+      "constraint_changed": false
+    },
+    {
+      "level": 2,
+      "sample_id": "public_0002",
+      "turn": 1,
+      "original_message": "I'm looking for Accessories Belts. Buckle closure",
+      "perturbed_message": "Please help me find Accessories Belts. Buckle closure",
+      "constraint_changed": false
+    },
+    {
+      "level": 2,
+      "sample_id": "public_0002",
+      "turn": 2,
+      "original_message": "For that, what matters is: leather; 100% Leather.",
+      "perturbed_message": "My main requirement is: leather; 100% Leather...",
+      "constraint_changed": false
+    },
+    {
+      "level": 2,
+      "sample_id": "public_0002",
+      "turn": 3,
+      "original_message": "Actually, ignore my earlier preference. What I need is: leather.",
+      "perturbed_message": "Actually, ignore my earlier preference. The important part is: leather...",
+      "constraint_changed": false
+    },
+    {
+      "level": 3,
+      "sample_id": "public_0001",
+      "turn": 1,
+      "original_message": "I'm looking for Jewelry Necklaces. A key requirement is: Material:alloy.",
+      "perturbed_message": "Please help me find Jewelry Necklaces. What would suit me is Material:alloy.",
+      "constraint_changed": false
+    },
+    {
+      "level": 3,
+      "sample_id": "public_0001",
+      "turn": 2,
+      "original_message": "For that, what matters is: Triple Moon Pentagram Symbol; The Triple Moon represents the Phases of the Moon which are linked to the three aspects of the Goddess and the phases of the Life of Women.The Pentagram representing the holistic r.",
+      "perturbed_message": "What would suit me is Triple Moon Pentagram Symbol; The Triple Moon represents the Phases of the Moon which are linked to the three aspects of the Goddess and the phases of the Life of Women.The Pentagram representing the holistic r...",
+      "constraint_changed": false
+    },
+    {
+      "level": 3,
+      "sample_id": "public_0002",
+      "turn": 1,
+      "original_message": "I'm looking for Accessories Belts. Buckle closure",
+      "perturbed_message": "I'm hoping to get Accessories Belts. Buckle closure",
+      "constraint_changed": false
+    },
+    {
+      "level": 3,
+      "sample_id": "public_0002",
+      "turn": 2,
+      "original_message": "For that, what matters is: leather; 100% Leather.",
+      "perturbed_message": "What would suit me is leather; 100% Leather.",
+      "constraint_changed": false
+    },
+    {
+      "level": 3,
+      "sample_id": "public_0002",
+      "turn": 3,
+      "original_message": "Actually, ignore my earlier preference. What I need is: leather.",
+      "perturbed_message": "Please replace what I said before; What would suit me is leather.",
+      "constraint_changed": false
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0002",
+      "turn": 2,
+      "original_message": "For that, what matters is: leather; 100% Leather.",
+      "perturbed_message": "What would suit me is made from genuine hide; made entirely from genuine hide!",
+      "constraint_changed": true
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0002",
+      "turn": 3,
+      "original_message": "Actually, ignore my earlier preference. What I need is: leather.",
+      "perturbed_message": "Please replace what I said before; What would suit me is made from genuine hide!",
+      "constraint_changed": true
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0002",
+      "turn": 4,
+      "original_message": "For that, what matters is: Imported; Buckle closure.",
+      "perturbed_message": "What would suit me is produced outside the domestic market; Buckle closure...",
+      "constraint_changed": true
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0003",
+      "turn": 2,
+      "original_message": "For that, what matters is: Water Resistant; 3 Year Battery.",
+      "perturbed_message": "What would suit me is able to handle light rain; 3 Year Battery!",
+      "constraint_changed": true
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0003",
+      "turn": 3,
+      "original_message": "Actually, ignore my earlier preference. What I need is: Water Resistant.",
+      "perturbed_message": "Please replace what I said before; What would suit me is able to handle light rain...",
+      "constraint_changed": true
+    }
+  ],
+  "level4_failures": [
+    {
+      "level": 4,
+      "sample_id": "public_0002",
+      "scenario_type": "intent_override",
+      "outcome": "worsened",
+      "rank_movement": "disappeared",
+      "baseline_rank": 1,
+      "perturbed_rank": null,
+      "baseline_hit_turn": 4,
+      "perturbed_hit_turn": null,
+      "original_message": "For that, what matters is: leather; 100% Leather.",
+      "perturbed_message": "What would suit me is made from genuine hide; made entirely from genuine hide!",
+      "likely_cause": "constraint wording changed, weakening exact-match and BM25 lexical overlap"
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0003",
+      "scenario_type": "intent_override",
+      "outcome": "worsened",
+      "rank_movement": "unchanged",
+      "baseline_rank": 1,
+      "perturbed_rank": 1,
+      "baseline_hit_turn": 3,
+      "perturbed_hit_turn": 4,
+      "original_message": "For that, what matters is: Water Resistant; 3 Year Battery.",
+      "perturbed_message": "What would suit me is able to handle light rain; 3 Year Battery!",
+      "likely_cause": "constraint wording changed, weakening exact-match and BM25 lexical overlap"
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0004",
+      "scenario_type": "intent_override",
+      "outcome": "worsened",
+      "rank_movement": "disappeared",
+      "baseline_rank": 1,
+      "perturbed_rank": null,
+      "baseline_hit_turn": 3,
+      "perturbed_hit_turn": null,
+      "original_message": "Actually, ignore my earlier preference. What I need is: polyester.",
+      "perturbed_message": "Please replace what I said before; What would suit me is a durable synthetic fibre!",
+      "likely_cause": "override phrase changed, so the agent's freshness reset may not be recognized"
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0005",
+      "scenario_type": "buying",
+      "outcome": "worsened",
+      "rank_movement": "worsened",
+      "baseline_rank": 2,
+      "perturbed_rank": 4,
+      "baseline_hit_turn": 1,
+      "perturbed_hit_turn": 1,
+      "original_message": "I'm looking for Outdoor & Work Snow & Cold Weather. A key requirement is: leather.",
+      "perturbed_message": "Please help me find Outdoor & Work Snow & Cold Weather. What would suit me is made from genuine hide!",
+      "likely_cause": "constraint wording changed, weakening exact-match and BM25 lexical overlap"
+    },
+    {
+      "level": 4,
+      "sample_id": "public_0007",
+      "scenario_type": "browsing",
+      "outcome": "worsened",
+      "rank_movement": "worsened",
+      "baseline_rank": 1,
+      "perturbed_rank": 10,
+      "baseline_hit_turn": 2,
+      "perturbed_hit_turn": 1,
+      "original_message": "I'm looking for Tees & Blouses Tunics, but I'm still exploring.",
+      "perturbed_message": "Could you show me Tees & Blouses Tunics, but I'm still exploring!",
+      "likely_cause": "surface/template wording changed, likely affecting category or constraint parsing"
+    }
+  ]
+}
