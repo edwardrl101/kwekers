@@ -57,6 +57,18 @@ def _reason_phrase(constraints: list[str]) -> str:
     return f"{clean[0]} and {clean[1]}"
 
 
+def _cap_deterministic_message(evidence: str, status: str, question: str) -> str:
+    tail = f"{status}{question}"
+    available = MAX_MESSAGE_CHARS - len(tail)
+    if available <= 0:
+        return tail[:MAX_MESSAGE_CHARS]
+    if len(evidence) <= available:
+        return f"{evidence}{tail}"
+    if available == 1:
+        return f"…{tail}"
+    return f"{evidence[: available - 1].rstrip()}…{tail}"
+
+
 def deterministic_explanation(constraints: list[str], confidence: float) -> str:
     """Build a concise explanation aligned with the shipped ``other`` question.
 
@@ -82,7 +94,7 @@ def deterministic_explanation(constraints: list[str], confidence: float) -> str:
     # ``ask_attribute`` is ``other`` in the frozen scored path, so the visible
     # question stays open-ended instead of pretending we asked for one field.
     question = " What else matters most to you?"
-    return f"{evidence}{status}{question}"
+    return _cap_deterministic_message(evidence, status, question)
 
 
 def explain(

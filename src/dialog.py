@@ -286,7 +286,7 @@ class SlotState:
         if no_additional and self.last_asked_attribute == "other":
             self.other_exhausted = True
 
-        is_override = bool(OVERRIDE_RE.search(message))
+        is_override = is_override_message(message)
         extracted = extract_constraints(message, scenario=self.scenario, turn=turn)
 
         # The initial override message contains the old soft preference without
