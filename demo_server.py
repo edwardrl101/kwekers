@@ -212,6 +212,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length < 0 or length > 1_000_000:
+                raise ValueError("request body too large")
             payload = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/api/chat":
                 self._json(200, APP.chat(payload))
@@ -222,7 +224,8 @@ class Handler(SimpleHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError) as error:
             self._json(400, {"error": str(error)})
         except Exception as error:
-            self._json(500, {"error": f"demo request failed: {error}"})
+            print(f"[demo] unhandled error: {error!r}")
+            self._json(500, {"error": "demo request failed"})
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
