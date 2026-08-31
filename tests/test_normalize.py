@@ -192,6 +192,16 @@ class LLMNormalizationTest(unittest.TestCase):
             [item.text for item in state.constraints if item.active], ["cotton"]
         )
 
+    def test_what_i_need_override_demotes_previous_preference(self) -> None:
+        state = SlotState("session")
+        state.update("A key requirement is: cotton.", 1)
+
+        added = state.update("What I need is: wool.", 2)
+
+        self.assertEqual([item.text for item in added], ["wool"])
+        self.assertEqual([item.text for item in state.constraints if item.active], ["wool"])
+        self.assertEqual([item.text for item in state.soft_constraints], ["cotton"])
+
 
 if __name__ == "__main__":
     unittest.main()

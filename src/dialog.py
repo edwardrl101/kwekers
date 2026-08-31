@@ -65,20 +65,21 @@ ALLOWED_ASK_ATTRIBUTES = (
     "other",
 )
 
-# Day-3 policy comparison names. Keep them stable so Agent and diagnostics agree.
+# Day-4 policy names. The production Agent currently ships the simpler
+# constant policy, while the rotation mode remains as an exercised fallback.
 POLICY_ALWAYS_OTHER = "always_other"
 POLICY_OTHER_TWICE_ROTATE = "other_twice_rotate"
 QUESTION_POLICY_MODES = (POLICY_ALWAYS_OTHER, POLICY_OTHER_TWICE_ROTATE)
 
-# The evaluator's classifier can never produce brand/category. A valid policy
-# must therefore stay inside this set (plus ``other``).
+# The evaluator classifier can never produce brand/category. Any runtime
+# policy must therefore stay inside this set (plus ``other``).
 SAFE_ASK_ATTRIBUTES = frozenset((*USEFUL_CLASSIFIED_ATTRIBUTES, "other"))
 
 
 # Message-shape detection.
 KEY_REQUIREMENT_RE = re.compile(r"\bA key requirement is:\s*(.+?)(?:\.\s*$|$)", re.I)
 MATTERS_RE = re.compile(r"\bFor that, what matters is:\s*(.+?)(?:\.\s*$|$)", re.I)
-WHAT_I_NEED_RE = re.compile(r"\bWhat I need is:\s*(.+?)(?:\.\s*$|$)", re.I)
+WHAT_I_NEED_RE = re.compile(r"\bWhat I need is:\s*([^\n.]+)", re.I)
 STILL_EXPLORING_RE = re.compile(r"\bstill exploring\b", re.I)
 BOUNDARY_REPLY_RE = re.compile(r"\bI don't have a preference for\b", re.I)
 NO_ADDITIONAL_RE = re.compile(r"\bI don't have an additional preference for\s+([a-z_]+)\b", re.I)
@@ -445,9 +446,10 @@ def route_scenario(message: str, turn: int, current: str = "unknown") -> str:
 
 
 def is_override_message(message: str) -> bool:
-    """Return True when the current user message is the simulator's override event."""
+    """Return True for the released evaluator's explicit override shape."""
 
-    return bool(OVERRIDE_RE.search(str(message or "")) or WHAT_I_NEED_RE.search(str(message or "")))
+    value = str(message or "")
+    return bool(OVERRIDE_RE.search(value) or WHAT_I_NEED_RE.search(value))
 
 
 def extract_constraints(message: str, scenario: str = "unknown", turn: int = 1) -> list[tuple[str, str]]:
@@ -488,18 +490,22 @@ def extract_constraints(message: str, scenario: str = "unknown", turn: int = 1) 
 
 
 class QuestionPolicy:
-    """Evaluator-safe clarification policy with two measured Day-3 variants.
+    """Evaluator-safe clarification policy with two measured variants.
 
     ``always_other``
-        Ask ``other`` every turn. In the released evaluator this weakly
-        dominates a specific attribute because it can reveal any two
-        undisclosed constraints.
+        Ask ``other`` every turn. The released simulator lets ``other`` reveal
+        any two undisclosed constraints, so it is the simplest high-information
+        constant policy. This is the production default.
 
     ``other_twice_rotate``
-        Follow the Day-2 fallback exactly: ask ``other`` on the first two
-        agent turns, then rotate ``feature -> material -> color -> style``.
-        This is the robustness/presentation fallback that Day 3 asks us to
-        compare against ``always_other`` on the real evaluator.
+        Ask ``other`` on the first two agent turns, then rotate
+        ``feature -> material -> color -> style``. This remains a tested
+        fallback for robustness/presentation if the simulator-specific
+        behavior of ``other`` changes.
+
+    The earlier full-evaluator comparison differed by only about 0.0015, well
+    inside the team's ±0.019 bootstrap noise floor. We therefore treat the two
+    policies as equivalent rather than claiming a meaningful win.
 
     Both modes are guaranteed non-null and never emit ``brand`` or
     ``category``.
@@ -507,7 +513,7 @@ class QuestionPolicy:
 
     FALLBACK_ORDER = ("feature", "material", "color", "style")
 
-    def __init__(self, mode: str = POLICY_OTHER_TWICE_ROTATE) -> None:
+    def __init__(self, mode: str = POLICY_ALWAYS_OTHER) -> None:
         if mode not in QUESTION_POLICY_MODES:
             raise ValueError(
                 f"unknown question-policy mode {mode!r}; expected one of {QUESTION_POLICY_MODES}"
@@ -519,10 +525,10 @@ class QuestionPolicy:
         state: SlotState,
         candidate_attribute_scores: Mapping[str, float] | None = None,
     ) -> str:
-        # The comparison requested in Day 3 is deliberately simple and
-        # deterministic. ``candidate_attribute_scores`` remains accepted for
-        # interface compatibility with Day 1, but does not override the two
-        # policies being measured.
+        # The Day-4 comparison deliberately keeps these two policies simple.
+        # Keep the optional score argument for interface compatibility with
+        # future information-gain policies, but do not let it mutate the
+        # measured policy definitions.
         del candidate_attribute_scores
 
         if self.mode == POLICY_ALWAYS_OTHER:
@@ -534,8 +540,6 @@ class QuestionPolicy:
             ask_attribute = self.FALLBACK_ORDER[index]
 
         if ask_attribute not in SAFE_ASK_ATTRIBUTES:
-            # Defensive invariant: never let future edits emit a dead or null
-            # attribute into the evaluator.
             return "other"
         return ask_attribute
 
@@ -614,9 +618,9 @@ def _public_dialog_metrics(
     catalog_path: Path,
     public_set_path: Path,
     *,
-    policy_mode: str = POLICY_OTHER_TWICE_ROTATE,
+    policy_mode: str = POLICY_ALWAYS_OTHER,
 ) -> dict:
-    """Measure card-drain speed and scenario-router accuracy on the public set.
+    """Measure drain speed and scenario-router accuracy on the public set.
 
     This is diagnostics only. Runtime classes above remain evaluator-independent.
     Boundary is intentionally resolved on the first reply because it is
@@ -657,9 +661,6 @@ def _public_dialog_metrics(
         state.update(message, turn=1)
         policy = QuestionPolicy(policy_mode)
 
-        # Turn-1 family routing is the strongest possible claim: browsing and
-        # boundary share exactly the same opener, so both map to the same
-        # provisional family until the first reply.
         expected_family = (
             "browsing_or_boundary" if expected in {"browsing", "boundary"} else expected
         )
@@ -749,10 +750,21 @@ def _public_dialog_metrics(
 
 
 def _public_drain_metrics(catalog_path: Path, public_set_path: Path) -> dict:
-    """Backward-compatible Day-1 diagnostic alias."""
+    """Backward-compatible diagnostic alias using the shipped policy."""
 
     return _public_dialog_metrics(
-        catalog_path, public_set_path, policy_mode=POLICY_OTHER_TWICE_ROTATE
+        catalog_path, public_set_path, policy_mode=POLICY_ALWAYS_OTHER
+    )
+
+
+def policy_evidence_summary() -> str:
+    """Return the honest Day-4 policy conclusion used in the writeup."""
+
+    return (
+        "Both policies were measured on the full evaluator. The historical "
+        "difference was about 0.0015, inside the team's ±0.019 bootstrap noise "
+        "floor, so we treat them as equivalent and ship the simpler constant "
+        "always-other policy. The rotation policy remains as a tested fallback."
     )
 
 
@@ -763,13 +775,13 @@ def main() -> int:
     parser.add_argument(
         "--policy",
         choices=QUESTION_POLICY_MODES,
-        default=POLICY_OTHER_TWICE_ROTATE,
+        default=POLICY_ALWAYS_OTHER,
         help="policy used for the drain diagnostic",
     )
     parser.add_argument(
         "--compare-policies",
         action="store_true",
-        help="print drain diagnostics for both Day-3 policy variants",
+        help="print drain diagnostics for both measured policy variants",
     )
     parser.add_argument(
         "--skip-public-metrics",
@@ -786,6 +798,7 @@ def main() -> int:
         "Ordering trap: budget is checked before material, so mixed "
         "budget+material text routes to budget."
     )
+    print("Policy conclusion:", policy_evidence_summary())
 
     failures = _self_check()
     print()
@@ -803,9 +816,7 @@ def main() -> int:
             modes = QUESTION_POLICY_MODES if args.compare_policies else (args.policy,)
             first_router = None
             for mode in modes:
-                metrics = _public_dialog_metrics(
-                    catalog, public_set, policy_mode=mode
-                )
+                metrics = _public_dialog_metrics(catalog, public_set, policy_mode=mode)
                 if first_router is None:
                     first_router = metrics["router"]
                     print(

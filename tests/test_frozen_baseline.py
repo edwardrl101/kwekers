@@ -11,15 +11,20 @@ from starter.agent import Agent
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SCORE = 0.891084
+EXPECTED_SCORE = 0.891111
 
 
 class FrozenOfflineBaselineTest(unittest.TestCase):
     def test_offline_reproduces_exactly_without_llm_calls(self) -> None:
         catalog_path = ROOT / "data" / "catalog.jsonl"
         public_path = ROOT / "data" / "public_set.jsonl"
-        if not catalog_path.exists() or not public_path.exists():
-            self.skipTest("frozen catalog/public set are not available")
+        if not public_path.exists():
+            self.fail("frozen public set is not available")
+        if not catalog_path.exists():
+            self.skipTest(
+                "frozen catalog is not stored in Git; run this test locally with "
+                "data/catalog.jsonl present"
+            )
 
         offline = {
             "OPENROUTER_API_KEY": "",

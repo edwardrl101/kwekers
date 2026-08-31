@@ -35,6 +35,14 @@ class ExplanationTest(unittest.TestCase):
 
         self.assertEqual(message, deterministic_explanation([], 0.0))
 
+    def test_deterministic_message_is_length_limited(self) -> None:
+        constraints = ["x" * 600]
+
+        message = deterministic_explanation(constraints, 0.8)
+
+        self.assertLessEqual(len(message), 240)
+        self.assertTrue(message.endswith("What else matters most to you?"))
+
 
 if __name__ == "__main__":
     unittest.main()
