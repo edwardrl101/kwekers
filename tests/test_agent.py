@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from starter.agent import Agent
 
@@ -42,10 +43,74 @@ class AgentShellTest(unittest.TestCase):
 
     def test_missing_dense_cache_never_triggers_an_automatic_build(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            agent = Agent(self._catalog(Path(directory)))
+            agent = Agent(self._catalog(Path(directory)), enable_dense=True)
 
             self.assertIsNone(agent._dense_route)
             self.assertIn("Dense cache not found", agent._route_errors["dense"])
+
+    def test_production_defaults_disable_dense(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)))
+
+            self.assertFalse(agent.enable_dense)
+            self.assertEqual(agent.dense_similarity_weight, 0.0)
+            self.assertIsNone(agent._dense_route)
+            self.assertNotIn("dense", agent._route_errors)
+
+    def test_all_day4_features_can_be_explicitly_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_llm_normalize=False,
+                enable_llm_override=False,
+                enable_llm_message=False,
+                enable_confidence=False,
+            )
+            agent.reset("session", {})
+            with patch("src.llm.call") as llm_call:
+                response = agent.respond("session", "I need shoes", 1, 10)
+
+            llm_call.assert_not_called()
+            self.assertEqual(
+                response["message"],
+                "I am refining the shortlist. What else should I consider?",
+            )
+            self.assertEqual(response["usage"], {"prompt_tokens": 0, "completion_tokens": 0})
+
+    def test_confidence_does_not_change_recommendation_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path = self._catalog(Path(directory), count=20)
+            without = Agent(catalog_path, enable_confidence=False)
+            with_confidence = Agent(catalog_path, enable_confidence=True)
+            for agent in (without, with_confidence):
+                agent._route_bucket = lambda *_: []
+                agent._route_exact = lambda *_: [("A005", 1.0)]
+                agent._route_dense = lambda *_: []
+                agent._route_bm25 = lambda *_: [
+                    (f"A{index:03d}", 100.0 - index) for index in range(20)
+                ]
+                agent.reset("session", {})
+
+            plain = without.respond("session", "query", 1, 10)
+            enriched = with_confidence.respond("session", "query", 1, 10)
+
+            self.assertEqual(plain["recommendations"], enriched["recommendations"])
+            self.assertGreaterEqual(with_confidence._sessions["session"]["confidence"], 0.0)
+            self.assertLessEqual(with_confidence._sessions["session"]["confidence"], 1.0)
+
+    def test_llm_message_hook_preserves_response_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_llm_message=True,
+            )
+            agent.reset("session", {})
+            with patch("src.explain.explain", return_value="A concise explanation."):
+                response = agent.respond("session", "I need shoes", 1, 10)
+
+            self.assertEqual(response["message"], "A concise explanation.")
+            self.assertEqual(response["ask_attribute"], "other")
+            self.assertEqual(len(response["recommendations"]), 10)
 
     def test_broken_route_is_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -65,12 +130,139 @@ class AgentShellTest(unittest.TestCase):
             second = agent.respond("second", "message", 2, 10)["recommendations"]
             self.assertEqual(first, second)
 
+    def test_freshness_avoids_repeats_across_normal_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=30), enable_dense=False
+            )
+            agent._route_bucket = None
+            agent._exact_route = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(30)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond(
+                "session",
+                "I'm looking for Shoes. A key requirement is: leather.",
+                1,
+                10,
+            )
+            second = agent.respond(
+                "session",
+                "For that, what matters is: soft.",
+                2,
+                10,
+            )
+            first_ids = {
+                item["parent_asin"] for item in first["recommendations"]
+            }
+            second_ids = {
+                item["parent_asin"] for item in second["recommendations"]
+            }
+
+            self.assertEqual(len(first_ids), 10)
+            self.assertEqual(len(second_ids), 10)
+            self.assertTrue(first_ids.isdisjoint(second_ids))
+            self.assertEqual(
+                agent._sessions["session"]["shown"], first_ids | second_ids
+            )
+
+    def test_override_clears_freshness_before_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=30), enable_dense=False
+            )
+            agent._route_bucket = None
+            agent._route_exact = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(30)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond(
+                "session",
+                "I'm looking for Shirts. Department: Womens",
+                1,
+                10,
+            )
+            agent.respond(
+                "session",
+                "For that, what matters is: color: black.",
+                2,
+                10,
+            )
+            override = agent.respond(
+                "session",
+                "Actually, ignore my earlier preference. What I need is: wool.",
+                3,
+                10,
+            )
+            first_ids = [item["parent_asin"] for item in first["recommendations"]]
+            override_ids = [
+                item["parent_asin"] for item in override["recommendations"]
+            ]
+
+            self.assertEqual(override_ids, first_ids)
+            self.assertEqual(agent._sessions["session"]["shown"], set(first_ids))
+
+    def test_random_fill_excludes_shown_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory), count=25), enable_dense=False
+            )
+            excluded = {f"A{index:03d}" for index in range(10)}
+            session = {"seed_key": "freshness-test", "shown": excluded}
+
+            result = agent._random_fill(["A000", "A010"], session, 2)
+
+            self.assertEqual(len(result), 10)
+            self.assertEqual(len(set(result)), 10)
+            self.assertTrue(set(result).isdisjoint(excluded))
+            self.assertEqual(result[0], "A010")
+
+    def test_reset_initializes_independent_freshness_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            agent.reset("first", {})
+            agent.reset("second", {})
+
+            agent._sessions["first"]["shown"].add("A000")
+
+            self.assertEqual(agent._sessions["first"]["shown"], {"A000"})
+            self.assertEqual(agent._sessions["second"]["shown"], set())
+
+    def test_freshness_can_be_disabled_for_ablation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                enable_freshness=False,
+            )
+            agent._route_bucket = None
+            agent._route_exact = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(20)
+            ]
+            agent.reset("session", {})
+
+            first = agent.respond("session", "query", 1, 10)["recommendations"]
+            second = agent.respond("session", "query", 2, 10)["recommendations"]
+
+            self.assertEqual(first, second)
+            self.assertEqual(agent._sessions["session"]["shown"], set())
+
     def test_route_adapters_delegate_and_preserve_scores(self) -> None:
         class FakeRoute:
             def __init__(self) -> None:
-                self.calls: list[tuple[str, int]] = []
+                self.calls: list[tuple[str | list[str], int]] = []
 
-            def query(self, text: str, limit: int) -> list[tuple[str, float]]:
+            def query(
+                self, text: str | list[str], limit: int
+            ) -> list[tuple[str, float]]:
                 self.calls.append((text, limit))
                 return [("A001", 0.9), ("A002", 0.5)]
 
@@ -90,6 +282,75 @@ class AgentShellTest(unittest.TestCase):
                 )
 
             self.assertEqual(route.calls, [("query", 500)] * 4)
+
+    def test_exact_adapter_passes_all_active_constraints_in_one_call(self) -> None:
+        class FakeExactRoute:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str | list[str], int]] = []
+
+            def query(
+                self, text: str | list[str], limit: int
+            ) -> list[tuple[str, float]]:
+                self.calls.append((text, limit))
+                return [("A003", 1.0)]
+
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            route = FakeExactRoute()
+            agent._exact_route = route
+
+            result = agent._route_exact(
+                {"active_constraints": ["cotton", "soft"]},
+                "ignored cumulative query",
+                2,
+            )
+
+            self.assertEqual(result, [("A003", 1.0)])
+            self.assertEqual(route.calls, [(["cotton", "soft"], 500)])
+
+    def test_real_exact_route_intersection_reaches_fusion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path = Path(directory) / "catalog.jsonl"
+            rows = [
+                {
+                    "parent_asin": f"A{index:03d}",
+                    "title": f"Product {index}",
+                    "features": (
+                        ["cotton", "soft"]
+                        if index == 3
+                        else ["cotton"]
+                        if index == 4
+                        else ["soft"]
+                        if index == 5
+                        else ["unrelated"]
+                    ),
+                }
+                for index in range(20)
+            ]
+            catalog_path.write_text(
+                "".join(json.dumps(row) + "\n" for row in rows),
+                encoding="utf-8",
+            )
+            agent = Agent(catalog_path, enable_dense=False)
+            agent._route_bucket = None
+            agent._dense_route = None
+            agent._route_bm25 = lambda *_: [
+                (f"A{index:03d}", 100.0 - index) for index in range(10)
+            ]
+            session = {"active_constraints": ["cotton", "soft"]}
+
+            route_results = agent._route_candidates(session, "query", 2)
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertEqual(route_results["exact"], [("A003", 1.0)])
+            self.assertEqual(fused[0], "A003")
+            session["active_constraints"] = ["cotton", "missing"]
+            self.assertEqual(
+                agent._route_exact(session, "query", 2),
+                [("A003", 1.0), ("A004", 1.0)],
+            )
+            session["active_constraints"] = ["cotton", "budget around $1"]
+            self.assertEqual(agent._route_exact(session, "query", 2), [])
 
     def test_route_collection_keeps_route_identity_and_scores(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -124,7 +385,11 @@ class AgentShellTest(unittest.TestCase):
 
     def test_dense_evidence_can_promote_a_bm25_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            agent = Agent(self._catalog(Path(directory)), enable_dense=False)
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                dense_similarity_weight=0.20,
+            )
             route_results = {
                 "bm25": [(f"A{index:03d}", 100.0 - index) for index in range(10)],
                 "exact": [],
@@ -136,6 +401,27 @@ class AgentShellTest(unittest.TestCase):
 
             self.assertLess(fused.index("A002"), 2)
             self.assertNotEqual(fused, [f"A{index:03d}" for index in range(10)])
+
+    def test_zero_auxiliary_weights_preserve_bm25_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = Agent(
+                self._catalog(Path(directory)),
+                enable_dense=False,
+                exact_match_boost=0.0,
+                bucket_match_boost=0.0,
+                dense_similarity_weight=0.0,
+            )
+            bm25 = [(f"A{index:03d}", 100.0 - index) for index in range(10)]
+            route_results = {
+                "bm25": bm25,
+                "exact": [("A009", 1.0)],
+                "bucket": [("A008", 1.0)],
+                "dense": [("A007", 0.99), ("A000", 0.01)],
+            }
+
+            fused = agent._fuse_bm25_pool(route_results)
+
+            self.assertEqual(fused, [parent_asin for parent_asin, _score in bm25])
 
     def test_respond_builds_an_accumulated_query_across_turns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

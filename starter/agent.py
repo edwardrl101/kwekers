@@ -13,10 +13,15 @@ ROUTE_CANDIDATE_LIMIT = 500
 RANDOM_FILL_SEED = "kwekers-day1-random-fill-v1"
 EXACT_MATCH_BOOST = 0.35
 BUCKET_MATCH_BOOST = 0.10
-DENSE_SIMILARITY_WEIGHT = 0.20
+DENSE_SIMILARITY_WEIGHT = 0.0
+ENABLE_LLM_NORMALIZE = False
+ENABLE_LLM_OVERRIDE = False
+ENABLE_LLM_MESSAGE = False
+ENABLE_CONFIDENCE = False
 
 ScoredCandidate: TypeAlias = tuple[str, float]
 RouteResults: TypeAlias = dict[str, list[ScoredCandidate]]
+RouteQuery: TypeAlias = str | list[str]
 
 
 class Agent:
@@ -26,11 +31,35 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         *,
-        enable_dense: bool = True,
+        enable_dense: bool = False,
+        enable_freshness: bool = True,
+        exact_match_boost: float = EXACT_MATCH_BOOST,
+        bucket_match_boost: float = BUCKET_MATCH_BOOST,
+        dense_similarity_weight: float = DENSE_SIMILARITY_WEIGHT,
+        enable_llm_normalize: bool | None = None,
+        enable_llm_override: bool | None = None,
+        enable_llm_message: bool | None = None,
+        enable_confidence: bool | None = None,
         question_policy_mode: str = "always_other",
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.enable_dense = enable_dense
+        self.enable_freshness = enable_freshness
+        self.exact_match_boost = float(exact_match_boost)
+        self.bucket_match_boost = float(bucket_match_boost)
+        self.dense_similarity_weight = float(dense_similarity_weight)
+        self.enable_llm_normalize = self._resolve_feature_flag(
+            "ENABLE_LLM_NORMALIZE", enable_llm_normalize, ENABLE_LLM_NORMALIZE
+        )
+        self.enable_llm_override = self._resolve_feature_flag(
+            "ENABLE_LLM_OVERRIDE", enable_llm_override, ENABLE_LLM_OVERRIDE
+        )
+        self.enable_llm_message = self._resolve_feature_flag(
+            "ENABLE_LLM_MESSAGE", enable_llm_message, ENABLE_LLM_MESSAGE
+        )
+        self.enable_confidence = self._resolve_feature_flag(
+            "ENABLE_CONFIDENCE", enable_confidence, ENABLE_CONFIDENCE
+        )
         self.question_policy_mode = question_policy_mode
         self.dense_cache_path = self.catalog_path.with_name("dense_cache.npz")
         self._catalog = self._load_catalog()
@@ -43,6 +72,17 @@ class Agent:
         self._dense_route = None
         self._route_errors: dict[str, str] = {}
         self._initialize_routes()
+
+    @staticmethod
+    def _resolve_feature_flag(name: str, explicit: bool | None, default: bool) -> bool:
+        if explicit is not None:
+            return bool(explicit)
+        try:
+            from src.llm import env_flag
+
+            return env_flag(name, default)
+        except Exception:
+            return default
 
     def _load_catalog(self) -> dict[str, dict]:
         """Load valid, uniquely identified products without crashing Agent."""
@@ -132,19 +172,18 @@ class Agent:
                 "category_message": "",
                 "category": "",
                 "active_constraints": [],
-                # Fresh-candidate tracking. The evaluator gives free guesses
-                # every turn, so repeating the same ten wastes coverage.
                 "shown": set(),
+                "confidence": 0.0,
             }
         except Exception:
             return None
 
     @staticmethod
-    def _query_route(route: object, user_message: str) -> list[ScoredCandidate]:
+    def _query_route(route: object, query: RouteQuery) -> list[ScoredCandidate]:
         """Validate a route response without discarding its retrieval scores."""
         if route is None:
             return []
-        results = route.query(user_message, limit=ROUTE_CANDIDATE_LIMIT)
+        results = route.query(query, limit=ROUTE_CANDIDATE_LIMIT)
         if not isinstance(results, list):
             return []
         candidates: list[ScoredCandidate] = []
@@ -173,27 +212,9 @@ class Agent:
         self, session: dict, user_message: str, turn: int
     ) -> list[ScoredCandidate]:
         active_constraints = session.get("active_constraints")
-        if not isinstance(active_constraints, list) or not active_constraints:
-            return self._query_route(self._exact_route, user_message)
-
-        # ExactRoute expects one simulator-shaped constraint at a time. Query
-        # every accumulated active constraint independently so a semicolon-
-        # joined synthetic query does not destroy exact-match evidence.
-        combined: list[ScoredCandidate] = []
-        seen: set[str] = set()
-        for constraint in active_constraints:
-            if not isinstance(constraint, str) or not constraint.strip():
-                continue
-            for parent_asin, score in self._query_route(
-                self._exact_route, constraint
-            ):
-                if parent_asin in seen:
-                    continue
-                seen.add(parent_asin)
-                combined.append((parent_asin, score))
-                if len(combined) >= ROUTE_CANDIDATE_LIMIT:
-                    return combined
-        return combined
+        if isinstance(active_constraints, list) and active_constraints:
+            return self._query_route(self._exact_route, active_constraints)
+        return self._query_route(self._exact_route, user_message)
 
     def _route_bm25(
         self, session: dict, user_message: str, turn: int
@@ -275,19 +296,64 @@ class Agent:
         for rank, (parent_asin, _raw_bm25_score) in enumerate(bm25_pool, start=1):
             score = self._normalize_bm25_rank(rank, candidate_count)
             if parent_asin in exact_ids:
-                score += EXACT_MATCH_BOOST
+                score += self.exact_match_boost
             if parent_asin in bucket_ids:
-                score += BUCKET_MATCH_BOOST
-            score += DENSE_SIMILARITY_WEIGHT * dense_scores.get(parent_asin, 0.0)
+                score += self.bucket_match_boost
+            score += self.dense_similarity_weight * dense_scores.get(parent_asin, 0.0)
             fused.append((parent_asin, score, rank))
 
         # Original BM25 rank is the deterministic tie-breaker.
         fused.sort(key=lambda item: (-item[1], item[2]))
         return [parent_asin for parent_asin, _score, _rank in fused]
 
-    @staticmethod
+    def _confidence_from_routes(self, route_results: RouteResults) -> float:
+        """Compute normalized softmax confidence without changing ranking."""
+        bm25_pool: list[str] = []
+        seen: set[str] = set()
+        for parent_asin, _score in route_results.get("bm25", []):
+            if parent_asin and parent_asin not in seen:
+                seen.add(parent_asin)
+                bm25_pool.append(parent_asin)
+            if len(bm25_pool) >= ROUTE_CANDIDATE_LIMIT:
+                break
+        if not bm25_pool:
+            return 0.0
+        if len(bm25_pool) == 1:
+            return 1.0
+
+        exact_ids = {item for item, _score in route_results.get("exact", [])}
+        bucket_ids = {item for item, _score in route_results.get("bucket", [])}
+        dense_scores = self._normalize_scores(route_results.get("dense", []))
+        scores: list[float] = []
+        count = len(bm25_pool)
+        for rank, parent_asin in enumerate(bm25_pool, start=1):
+            score = self._normalize_bm25_rank(rank, count)
+            if parent_asin in exact_ids:
+                score += self.exact_match_boost
+            if parent_asin in bucket_ids:
+                score += self.bucket_match_boost
+            score += self.dense_similarity_weight * dense_scores.get(parent_asin, 0.0)
+            scores.append(score)
+
+        maximum = max(scores)
+        weights = [math.exp(score - maximum) for score in scores]
+        total = sum(weights)
+        probabilities = [weight / total for weight in weights]
+        entropy = -sum(
+            probability * math.log(probability)
+            for probability in probabilities
+            if probability > 0
+        )
+        normalized_entropy = entropy / math.log(len(probabilities))
+        return max(0.0, min(1.0, 1.0 - normalized_entropy))
+
     def _update_retrieval_context(
-        session: dict, user_message: str, turn: int
+        self,
+        session: dict,
+        user_message: str,
+        turn: int,
+        *,
+        override_detected: bool = False,
     ) -> str:
         """Update dialog slots and produce a compact cumulative search query."""
         slot_state = session.get("slot_state")
@@ -296,6 +362,42 @@ class Agent:
                 slot_state.update(user_message, turn)
             except Exception:
                 slot_state = None
+
+        if slot_state is not None and self.enable_llm_normalize:
+            try:
+                from src.dialog import OVERRIDE_RE
+                from src.normalize import normalize_constraints
+
+                values = normalize_constraints(
+                    user_message,
+                    self._exact_route,
+                    scenario=slot_state.scenario,
+                    turn=turn,
+                )
+                regex_override = bool(OVERRIDE_RE.search(user_message))
+                slot_state.add_external_constraints(
+                    values,
+                    turn,
+                    is_override=(
+                        self.enable_llm_override
+                        and override_detected
+                        and not regex_override
+                    ),
+                )
+            except Exception:
+                pass
+        elif (
+            slot_state is not None
+            and self.enable_llm_override
+            and override_detected
+        ):
+            try:
+                from src.dialog import OVERRIDE_RE
+
+                if not OVERRIDE_RE.search(user_message):
+                    slot_state.add_external_constraints([], turn, is_override=True)
+            except Exception:
+                pass
 
         try:
             from src.buckets import extract_category_phrase
@@ -322,21 +424,24 @@ class Agent:
         if isinstance(stored_category, str) and stored_category.strip():
             parts.append(stored_category.strip())
         parts.extend(value.strip() for value in active_constraints if value.strip())
+        if self.enable_llm_override and override_detected and not active_constraints:
+            parts.append(user_message.strip())
         return " ".join(parts) or user_message
 
-    def _random_fill(
-        self,
-        candidates: list[str],
-        session: dict,
-        turn: int,
-        *,
-        excluded: set[str] | None = None,
-    ) -> list[str]:
-        """Pad to ten unique recommendations while respecting freshness."""
+    def _random_fill(self, candidates: list[str], session: dict, turn: int) -> list[str]:
+        """Pad route results reproducibly without repeating session history."""
         result: list[str] = []
-        seen: set[str] = set(excluded or ())
+        seen: set[str] = set()
+        shown = session.get("shown", set()) if isinstance(session, dict) else set()
+        excluded = (
+            shown if self.enable_freshness and isinstance(shown, set) else set()
+        )
         for parent_asin in candidates:
-            if parent_asin in self._catalog_id_set and parent_asin not in seen:
+            if (
+                parent_asin in self._catalog_id_set
+                and parent_asin not in excluded
+                and parent_asin not in seen
+            ):
                 seen.add(parent_asin)
                 result.append(parent_asin)
                 if len(result) == RECOMMENDATION_COUNT:
@@ -352,14 +457,13 @@ class Agent:
             hashlib.sha256(seed_text.encode("utf-8")).digest()[:8], "big"
         )
         rng = random.Random(seed)
-        attempts = 0
-        max_attempts = max(100, len(self._catalog_ids) * 3)
-        while len(result) < RECOMMENDATION_COUNT and attempts < max_attempts:
-            attempts += 1
-            if not self._catalog_ids:
-                break
+        available_count = len(self._catalog_ids) - len(excluded & self._catalog_id_set)
+        while (
+            len(result) < RECOMMENDATION_COUNT
+            and len(seen) < available_count
+        ):
             parent_asin = self._catalog_ids[rng.randrange(len(self._catalog_ids))]
-            if parent_asin not in seen:
+            if parent_asin not in excluded and parent_asin not in seen:
                 seen.add(parent_asin)
                 result.append(parent_asin)
 
@@ -424,6 +528,25 @@ class Agent:
             ask_attribute, "I am refining the shortlist. What else should I consider?"
         )
 
+    def _is_override_message(self, user_message: str) -> bool:
+        """Recognize the evaluator override and close private paraphrases."""
+        try:
+            from src.dialog import is_override_message
+
+            if is_override_message(user_message):
+                return True
+        except Exception:
+            if "ignore my earlier preference" in user_message.lower():
+                return True
+        if not self.enable_llm_override:
+            return False
+        try:
+            from src.normalize import detect_override
+
+            return detect_override(user_message)
+        except Exception:
+            return False
+
     def respond(
         self,
         session_id: str,
@@ -431,9 +554,23 @@ class Agent:
         turn: int,
         top_k: int,
     ) -> dict:
-        """Return ten fresh recommendations and one safe clarification ask."""
+        """Return a valid response even if session state or a route is broken."""
+        customer_message = "I am refining the shortlist. What else should I consider?"
         ask_attribute = "other"
-        message = self._question_message(ask_attribute)
+        usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        telemetry_start = 0
+        llm_enabled = (
+            self.enable_llm_normalize
+            or self.enable_llm_override
+            or self.enable_llm_message
+        )
+        if llm_enabled:
+            try:
+                from src import llm
+
+                telemetry_start = len(llm.telemetry())
+            except Exception:
+                llm_enabled = False
         try:
             key = str(session_id)
             session = self._sessions.get(
@@ -445,40 +582,28 @@ class Agent:
             )
             safe_message = user_message if isinstance(user_message, str) else ""
             safe_turn = turn if isinstance(turn, int) else 0
-
-            # Intent-override hits cannot count until the override arrives. Any
-            # correct product shown during that blackout must become eligible
-            # again once the override message fires. Keep dialog context; only
-            # reset the shown set.
-            try:
-                from src.dialog import is_override_message
-
-                if is_override_message(safe_message):
-                    shown = session.get("shown")
-                    if isinstance(shown, set):
-                        shown.clear()
-                    else:
-                        session["shown"] = set()
-            except Exception:
-                pass
-
+            override_detected = self._is_override_message(safe_message)
             retrieval_query = self._update_retrieval_context(
-                session, safe_message, safe_turn
+                session,
+                safe_message,
+                safe_turn,
+                override_detected=override_detected,
             )
-            route_results = self._route_candidates(
-                session, retrieval_query, safe_turn
-            )
-            routed_ids = self._fuse_bm25_pool(route_results)
-
             shown = session.get("shown")
             if not isinstance(shown, set):
                 shown = set()
                 session["shown"] = shown
-            parent_asins = self._random_fill(
-                routed_ids, session, safe_turn, excluded=shown
+            if self.enable_freshness and override_detected:
+                shown.clear()
+            route_results = self._route_candidates(
+                session, retrieval_query, safe_turn
             )
-            shown.update(parent_asins)
-
+            routed_ids = self._fuse_bm25_pool(route_results)
+            parent_asins = self._random_fill(routed_ids, session, safe_turn)
+            if self.enable_confidence or self.enable_llm_message:
+                session["confidence"] = self._confidence_from_routes(route_results)
+            if self.enable_freshness:
+                shown.update(parent_asins)
             ask_attribute = self._choose_ask_attribute(session)
             slot_state = session.get("slot_state")
             if slot_state is not None:
@@ -486,17 +611,52 @@ class Agent:
                     slot_state.record_ask(ask_attribute)
                 except Exception:
                     ask_attribute = "other"
-            message = self._question_message(ask_attribute)
+            customer_message = self._question_message(ask_attribute)
+            if self.enable_confidence or self.enable_llm_message:
+                try:
+                    from src.explain import explain
+
+                    constraints = session.get("active_constraints", [])
+                    constraints = constraints if isinstance(constraints, list) else []
+                    products = [
+                        self._catalog[parent_asin]
+                        for parent_asin in parent_asins[:3]
+                        if parent_asin in self._catalog
+                    ]
+                    customer_message = explain(
+                        constraints,
+                        products,
+                        float(session.get("confidence", 0.0)),
+                        use_llm=self.enable_llm_message,
+                    )
+                except Exception:
+                    pass
         except Exception:
             parent_asins = self._random_fill([], {"seed_key": "error"}, 0)
             ask_attribute = "other"
-            message = self._question_message(ask_attribute)
+            customer_message = self._question_message(ask_attribute)
+
+        if llm_enabled:
+            try:
+                from src import llm
+
+                records = llm.telemetry()[telemetry_start:]
+                usage = {
+                    "prompt_tokens": sum(
+                        int(record.get("prompt_tokens", 0)) for record in records
+                    ),
+                    "completion_tokens": sum(
+                        int(record.get("completion_tokens", 0)) for record in records
+                    ),
+                }
+            except Exception:
+                pass
 
         return {
-            "message": message,
+            "message": customer_message,
             "ask_attribute": ask_attribute,
             "recommendations": [
                 {"parent_asin": parent_asin} for parent_asin in parent_asins
             ],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            "usage": usage,
         }

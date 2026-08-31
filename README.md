@@ -61,6 +61,26 @@ The command prints overall and per-scenario metrics, writes
 Run `--split holdout` only for checkpoints, and use `--split all` when reporting
 a score explicitly measured on all 200 public sessions.
 
+For stability checks on frozen configurations, use the committed grouped,
+scenario-stratified five-fold manifest:
+
+```bash
+python scripts/eval_cv.py --config no-dense --folds all
+python scripts/eval_cv.py --config bm25-only --folds all
+```
+
+The runner reports fold mean, population standard deviation, worst fold, and
+aggregate out-of-fold metrics. Validate the manifest without the large catalog
+using `python scripts/eval_cv.py --validate-only`. Regenerate it deliberately
+with `python scripts/build_cv_folds.py`; generation requires the catalog so
+target-title groups can be audited. Cross-validation is a configuration
+stability check, not an untouched estimate after its results influence changes.
+
+GitHub Actions compiles the Python sources, runs the full test suite, validates
+the fold manifest, checks whitespace, and publishes a source artifact after the
+checks pass. Full catalog evaluation remains a local or manually provisioned
+job because the 50,000-product catalog is intentionally not stored in Git.
+
 ## Agent Interface
 
 ```python
@@ -96,9 +116,42 @@ Efficiency = clip((11 - MTTC) / 10, 0, 1)
 
 Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
 
+## Run the Interactive Demo
+
+The presentation dashboard calls the current production `Agent` and visualizes
+its real intermediate retrieval and ranking decisions:
+
+```bash
+python3 demo_server.py
+```
+
+Open `http://127.0.0.1:8000`. The first launch builds the offline indexes over
+the local 50,000-product catalog and may take several seconds. No additional
+package or network connection is required. See
+`docs/demo-repository-audit.md` for the pre-implementation pipeline audit and
+the observability boundary used by the demo.
+
 ## Model Choice and Cost
 
 Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
+
+### Optional OpenRouter layer
+
+The production ranking path remains fully offline. Optional regex-miss
+normalization, paraphrased override detection, confidence-aware explanations,
+and LLM-written messages are protected by default-off flags. The shared client
+accepts only a pinned `:free` model, times out after three seconds, and falls
+back deterministically on every failure.
+
+Copy `.env.example` to an untracked `.env`, add your local key, and run:
+
+```bash
+python scripts/llm_smoke.py
+```
+
+See `docs/day4-member1-guide.md` for the architecture, flags, security model,
+offline freeze, and reproducibility commands. Never include `.env` or an API
+key in a submission; official scoring does not require network access.
 
 ## Files
 
