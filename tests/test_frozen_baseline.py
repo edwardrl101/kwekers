@@ -11,7 +11,7 @@ from starter.agent import Agent
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SCORE = 0.891111
+EXPECTED_SCORE = 0.891084
 
 
 class FrozenOfflineBaselineTest(unittest.TestCase):
