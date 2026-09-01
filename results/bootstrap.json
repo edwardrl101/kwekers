@@ -1,0 +1,145 @@
+{
+  "generated_at_utc": "2026-08-30T16:19:44+00:00",
+  "iterations": 10000,
+  "seed": 20260831,
+  "sample_count": 200,
+  "configs": {
+    "no-dense (shipped)": {
+      "options": {
+        "enable_freshness": true,
+        "enable_dense": false,
+        "dense_similarity_weight": 0.0
+      },
+      "technical_score": 0.891084,
+      "hit_rate_at_10": 1.0,
+      "mrr": 0.707615,
+      "mttc": 2.06
+    },
+    "full-freshness": {
+      "options": {
+        "enable_freshness": true,
+        "enable_dense": true,
+        "dense_similarity_weight": 0.2
+      },
+      "technical_score": 0.883563,
+      "hit_rate_at_10": 0.995,
+      "mrr": 0.690877,
+      "mttc": 2.06
+    },
+    "no-bucket (dense on)": {
+      "options": {
+        "enable_freshness": true,
+        "enable_dense": true,
+        "bucket_match_boost": 0.0,
+        "dense_similarity_weight": 0.2
+      },
+      "technical_score": 0.871311,
+      "hit_rate_at_10": 0.995,
+      "mrr": 0.650369,
+      "mttc": 2.065
+    },
+    "no-bucket (dense off)": {
+      "options": {
+        "enable_freshness": true,
+        "enable_dense": false,
+        "bucket_match_boost": 0.0,
+        "dense_similarity_weight": 0.0
+      },
+      "technical_score": 0.884159,
+      "hit_rate_at_10": 0.995,
+      "mrr": 0.699198,
+      "mttc": 2.155
+    },
+    "bm25-only": {
+      "options": {
+        "enable_freshness": true,
+        "enable_dense": false,
+        "exact_match_boost": 0.0,
+        "bucket_match_boost": 0.0,
+        "dense_similarity_weight": 0.0
+      },
+      "technical_score": 0.862795,
+      "hit_rate_at_10": 0.995,
+      "mrr": 0.647982,
+      "mttc": 2.455
+    }
+  },
+  "pairs": [
+    {
+      "label": "Disable dense",
+      "a": "no-dense (shipped)",
+      "b": "full-freshness",
+      "axis": "dense only",
+      "n_sessions": 200,
+      "point_estimate_a": 0.891085,
+      "point_estimate_b": 0.883563,
+      "point_delta": 0.007521,
+      "paired_mean_delta": 0.007619,
+      "paired_se_delta": 0.007369,
+      "paired_ci95": [
+        -0.006501,
+        0.022405
+      ],
+      "excludes_zero": false,
+      "unpaired_se_a": 0.007324,
+      "unpaired_se_b": 0.008563
+    },
+    {
+      "label": "Ship bucket (clean, dense=0.20 both sides)",
+      "a": "full-freshness",
+      "b": "no-bucket (dense on)",
+      "axis": "bucket only",
+      "n_sessions": 200,
+      "point_estimate_a": 0.883563,
+      "point_estimate_b": 0.871311,
+      "point_delta": 0.012252,
+      "paired_mean_delta": 0.012234,
+      "paired_se_delta": 0.003003,
+      "paired_ci95": [
+        0.0065,
+        0.018203
+      ],
+      "excludes_zero": true,
+      "unpaired_se_a": 0.008563,
+      "unpaired_se_b": 0.008751
+    },
+    {
+      "label": "Ship bucket (literal Day-plan wording: vs shipped)",
+      "a": "no-dense (shipped)",
+      "b": "no-bucket (dense off)",
+      "axis": "bucket only, shipped baseline",
+      "n_sessions": 200,
+      "point_estimate_a": 0.891085,
+      "point_estimate_b": 0.88416,
+      "point_delta": 0.006925,
+      "paired_mean_delta": 0.00686,
+      "paired_se_delta": 0.005784,
+      "paired_ci95": [
+        -0.003864,
+        0.018481
+      ],
+      "excludes_zero": false,
+      "unpaired_se_a": 0.007324,
+      "unpaired_se_b": 0.008561
+    },
+    {
+      "label": "Full fusion stack beats BM25-only",
+      "a": "no-dense (shipped)",
+      "b": "bm25-only",
+      "axis": "exact + bucket + dense together (holistic, not single-axis)",
+      "n_sessions": 200,
+      "point_estimate_a": 0.891085,
+      "point_estimate_b": 0.862795,
+      "point_delta": 0.02829,
+      "paired_mean_delta": 0.028238,
+      "paired_se_delta": 0.010316,
+      "paired_ci95": [
+        0.00775,
+        0.048311
+      ],
+      "excludes_zero": true,
+      "unpaired_se_a": 0.007324,
+      "unpaired_se_b": 0.009156
+    }
+  ]
+}
