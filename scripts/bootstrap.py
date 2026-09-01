@@ -1,4 +1,4 @@
-"""Day 4: paired bootstrap on the three contested Day 3 decisions.
+"""Paired bootstrap on the three contested retrieval-fusion decisions.
 
 CLAUDE.md's own statistical-discipline note: TechnicalScore's unpaired
 bootstrap SE at n=200 is ~0.0096 (95% CI width ~0.019), and configs run on
@@ -28,7 +28,7 @@ framing for the bucket question (see PAIRS below for why both are reported):
                                    three axes at once, deliberately holistic)
 
 Usage:
-    python3 scripts/day4_bootstrap.py [--iterations 10000] [--seed 20260831]
+    python3 scripts/bootstrap.py [--iterations 10000] [--seed 20260831]
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def main() -> None:
     parser.add_argument("--dataset", type=Path, default=ROOT / "data/public_set.jsonl")
     parser.add_argument("--iterations", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=20260831)
-    parser.add_argument("--output", type=Path, default=ROOT / "results" / "day4_bootstrap.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "results" / "bootstrap.json")
     args = parser.parse_args()
 
     samples = load_jsonl(args.dataset)

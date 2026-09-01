@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # leaving them to SQLite's unspecified order (see src/retrieval.py::_run).
 # Isolated to one session (public_0052, intent_override, rank 7 -> 8, same
 # hit/turn) by toggling that single line with the rest of the tree held
-# fixed. Relayed to M1 for tests/test_frozen_baseline.py; not edited here -
-# that file is M1's integration gate.
+# fixed. tests/test_frozen_baseline.py is the integration gate and is not
+# edited here.
 EXPECTED_SCORE = 0.891084
 
 
@@ -68,7 +68,7 @@ class NormalizedConfidenceTest(unittest.TestCase):
 
 
 class FusedPoolScoresParityTest(unittest.TestCase):
-    """Proves Agent delegates confidence to Member 4's module."""
+    """Proves Agent delegates confidence to the src.confidence module."""
 
     def _agent(self, directory: Path) -> Agent:
         path = directory / "catalog.jsonl"

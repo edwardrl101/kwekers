@@ -66,13 +66,6 @@ class DemoApp:
         }
         self.replays: dict[str, dict] = {}
 
-    def reset(self, session_id: str | None = None) -> dict:
-        sid = session_id or uuid.uuid4().hex[:12]
-        with LOCK:
-            self.agent.reset(sid, {})
-            self.turns[sid] = 0
-        return {"session_id": sid}
-
     def chat(self, payload: dict) -> dict:
         sid = str(payload.get("session_id") or uuid.uuid4().hex[:12])
         message = str(payload.get("message") or "").strip()
@@ -341,11 +334,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length < 0 or length > 1_000_000:
                 raise ValueError("request body too large")
             payload = json.loads(self.rfile.read(length) or b"{}")
-            if self.path == "/api/chat":
-                self._json(200, APP.chat(payload))
-            elif self.path == "/api/reset":
-                self._json(200, APP.reset(payload.get("session_id")))
-            elif self.path == "/api/replay/start":
+            if self.path == "/api/replay/start":
                 self._json(200, APP.replay_start(str(payload.get("sample_id", ""))))
             elif self.path == "/api/replay/step":
                 self._json(200, APP.replay_step(str(payload.get("session_id", ""))))

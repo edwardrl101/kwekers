@@ -1,10 +1,10 @@
-# Member 5 (Sheng Yan) — Day 4 completion report
+# Dialog policy and explanation report
 
 ## Current baseline after rebasing to latest main
 
-The earlier Member-5 result (`0.867675`, MRR `0.66225`) is obsolete. The latest
-team measurements in the Day-4 instructions report the corrected frozen
-offline baseline as:
+The earlier question-policy measurement (`0.867675`, MRR `0.66225`) is
+obsolete. The latest team measurements report the corrected frozen offline
+baseline as:
 
 | Metric | Current main |
 |---|---:|
@@ -35,7 +35,7 @@ message generation.
 The dialog-state diagnostic still records a mean **2.11 question turns** to
 drain the released four-item intent card with the constant policy.
 
-## Day-4 Member-5 work
+## Day 4 work
 
 ### `src/dialog.py`
 
@@ -82,17 +82,17 @@ python scripts/demo.py --save-examples
 
 Generated files:
 
-- `demo_transcripts/buying.md`
-- `demo_transcripts/browsing.md`
-- `demo_transcripts/intent_override.md`
+- `demo/transcripts/buying.md`
+- `demo/transcripts/browsing.md`
+- `demo/transcripts/intent_override.md`
 
 The intent-override transcript deliberately continues through the evaluator's
 blackout period and demonstrates the mind-change handling before hitting the
 target.
 
-## Ownership / integration safety
+## Integration safety
 
-No changes are made to `starter/agent.py`. Day 4 assigns that file to Member 1,
-and current main already contains the Member-5 integration: SlotState is updated
-inside the turn loop, shown products are cleared on an override, accumulated
-constraints are preserved, and the scored response asks `other`.
+No changes are made to `starter/agent.py`. That file is out of scope for this
+report; current main already contains the dialog-state integration: SlotState
+is updated inside the turn loop, shown products are cleared on an override,
+accumulated constraints are preserved, and the scored response asks `other`.

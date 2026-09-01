@@ -13,7 +13,7 @@ from src.dialog import (
 from src.explain import deterministic_explanation, explain
 
 
-class Member5Day4Test(unittest.TestCase):
+class QuestionPolicyTest(unittest.TestCase):
     def test_default_policy_is_constant_other(self) -> None:
         state = SlotState("session")
         policy = QuestionPolicy()

@@ -1,4 +1,4 @@
-"""Member 2 robustness, latency, and offline-cost evaluation harness.
+"""Robustness, latency, and offline-cost evaluation harness.
 
 This module intentionally wraps the shipped Agent without changing production
 ranking or retrieval code. Level 0 is an identity control and must reproduce
@@ -572,7 +572,7 @@ def _markdown_report(
 ) -> str:
     baseline = results[0]
     lines = [
-        "# Member 2 Day 4 robustness report", "",
+        "# Adversarial robustness report", "",
         "## Frozen baseline verification", "",
         f"Level 0 reproduced TechnicalScore **{baseline['recommended_technical_score']:.6f}** "
         f"on {baseline['sample_count']} sessions. The shipped response reported "
@@ -827,7 +827,7 @@ def main() -> None:
         json.dumps({"examples": examples, "level4_failures": failures}, indent=2) + "\n",
         encoding="utf-8",
     )
-    (output_dir / "member2_day4_report.md").write_text(
+    (output_dir / "adversarial_robustness_report.md").write_text(
         _markdown_report(result_rows, results, examples, failures, cost_rows), encoding="utf-8"
     )
 

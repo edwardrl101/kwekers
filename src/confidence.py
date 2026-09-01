@@ -1,6 +1,6 @@
 """Read-only confidence layer: softmax + normalized entropy over the fused pool.
 
-Day 4 / Member 4. This module is the single implementation used by
+Day 4. This module is the single implementation used by
 ``starter.agent.Agent._confidence_from_routes`` and by offline measurement
 scripts. Keeping the computation here prevents the production integration and
 confidence diagnostics from drifting apart.

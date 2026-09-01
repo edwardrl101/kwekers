@@ -1,7 +1,7 @@
-"""Member 4 - retrieval routes.
+"""Retrieval routes.
 
 Three independent search engines over the 50k catalog. Each exposes the same
-interface so Member 1 can fuse them with RRF on Day 2:
+interface so they can be fused with RRF:
 
     route.query(text, limit) -> list[(parent_asin, score)]  # best first
 
@@ -10,8 +10,8 @@ Routes:
     NgramRoute  - char 3-5 gram TF-IDF, fuzzy + truncation robust
     DenseRoute  - bge-small bi-encoder embeddings, semantic
 
-IMPORTANT for the team: norm() below is aggressive (NFKC + symbol stripping).
-It is for THESE ROUTES ONLY. Member 3's exact-match index must mirror the
+IMPORTANT: norm() below is aggressive (NFKC + symbol stripping). It is for
+THESE ROUTES ONLY. The exact-match index (src/exact.py) must mirror the
 evaluator's _clean_constraint() byte-for-byte instead, which does NOT do NFKC.
 """
 
@@ -290,12 +290,12 @@ class BM25Route:
             # from rank 7 to rank 8 for the same turn-3 hit, moving the
             # official score from 0.891111 to 0.891084 (isolated with
             # tests/test_frozen_baseline.py, one variable at a time - see
-            # commit message / Member 4's Day 4 notes). That 0.000027 delta
+            # the commit message for the Day 4 notes). That 0.000027 delta
             # is the frozen score silently depending on incidental SQLite
             # ordering today; parent_asin as a secondary key makes both the
             # order and the LIMIT cutoff deterministic across environments,
             # which is what "must reproduce exactly" actually requires. Same
-            # bug class M3 already fixed in src/exact.py (commit dc7b5fd,
+            # bug class already fixed in src/exact.py (commit dc7b5fd,
             # "sort exact intersections before limiting to eliminate
             # process-dependent subsets").
             rows = self.connection.execute(

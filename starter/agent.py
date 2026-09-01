@@ -307,7 +307,7 @@ class Agent:
         return [parent_asin for parent_asin, _score, _rank in fused]
 
     def _confidence_from_routes(self, route_results: RouteResults) -> float:
-        """Delegate read-only confidence to Member 4's integrated module."""
+        """Delegate read-only confidence to the src.confidence module."""
         try:
             from src.confidence import confidence_from_route_results
 

@@ -127,16 +127,14 @@ python3 demo_server.py
 
 Open `http://127.0.0.1:8000`. The first launch builds the offline indexes over
 the local 50,000-product catalog and may take several seconds. No additional
-package or network connection is required. See
-`docs/demo-repository-audit.md` for the pre-implementation pipeline audit and
-the observability boundary used by the demo.
+package or network connection is required.
 
-The live system has two modes. **Free Shop** accepts manually typed messages.
-**Evaluation Replay** automatically runs one of four labeled public sessions
-using the evaluator's own `initial_message()` and `customer_reply()` functions.
-The replay displays the target to the audience but never passes it to the
-Agent, highlights the matching recommendation, and stops immediately on the
-first valid hit or after turn 10.
+The live system runs **Evaluation Replay**: pick one of four labeled public
+sessions and it plays out automatically, using the evaluator's own
+`initial_message()` and `customer_reply()` functions. The replay displays the
+target to the audience but never passes it to the Agent, highlights the
+matching recommendation, and stops immediately on the first valid hit or
+after turn 10.
 
 ## Model Choice and Cost
 
@@ -156,7 +154,7 @@ Copy `.env.example` to an untracked `.env`, add your local key, and run:
 python scripts/llm_smoke.py
 ```
 
-See `docs/day4-member1-guide.md` for the architecture, flags, security model,
+See `docs/llm_integration_guide.md` for the architecture, flags, security model,
 offline freeze, and reproducibility commands. Never include `.env` or an API
 key in a submission; official scoring does not require network access.
 

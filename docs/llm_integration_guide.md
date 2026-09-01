@@ -1,4 +1,4 @@
-# Day 4 Member 1 guide: optional OpenRouter integration
+# Guide: optional OpenRouter integration
 
 ## Goal
 
@@ -8,10 +8,10 @@ scores **0.891111** over all 200 public sessions. The older **0.877011** value
 in the original Day 4 brief is historical and predates the three-state exact
 constraint correction now merged into `main`.
 
-Member 1 owns the integration boundary: `starter/agent.py`, `src/llm.py`, the
-offline freeze, feature flags, failure isolation, and final reproducibility.
-The release is acceptable only when a clean environment with no API key makes
-zero LLM calls and still scores exactly `0.891111`.
+The integration boundary is `starter/agent.py` and `src/llm.py`: the offline
+freeze, feature flags, failure isolation, and final reproducibility all live
+there. The release is acceptable only when a clean environment with no API
+key makes zero LLM calls and still scores exactly `0.891111`.
 
 ## Current architecture
 
@@ -153,7 +153,7 @@ The expected final gate is:
 flags off + no key -> score 0.891111 -> CALL_COUNT 0
 ```
 
-## Member 1 release checklist
+## Release checklist
 
 - Keep `starter/agent.py` integration changes centralized.
 - Require deterministic fallbacks from every optional contributor.

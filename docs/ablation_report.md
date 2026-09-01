@@ -1,16 +1,16 @@
-# Day 3 ablation report
+# Retrieval ablation report
 
 ## Outcome
 
-Ship the Member 1 pipeline with cross-turn freshness, exact AND evidence at
+Ship the production pipeline with cross-turn freshness, exact AND evidence at
 `0.35`, bucket evidence at `0.10`, and dense disabled. This configuration
 scores **0.877011** on all 200 public sessions, with Hit@10 **0.995**, MRR
 **0.690702**, and MTTC **2.385**.
 
 The production configuration improves on both reported Day 3 comparison points:
 
-- historical Member 1 full stack: `0.820121`;
-- Member 4 BM25-plus-freshness reference: `0.8553`.
+- historical full-stack pipeline: `0.820121`;
+- BM25-plus-freshness reference: `0.8553`.
 
 All authoritative rows below were run after exact results were made
 deterministic. Generated result JSON remains gitignored; run summaries are kept
@@ -20,7 +20,7 @@ locally in `runs/runs.csv`.
 
 | Commit | Milestone |
 |---|---|
-| `a7dc2aa` | Cherry-pick Member 3's ExactRoute `query()` and unmatched-constraint fix |
+| `a7dc2aa` | Cherry-pick ExactRoute `query()` and unmatched-constraint fix |
 | `cd91365` | Pass all active constraints through Agent in one exact query; add real integration coverage |
 | `534dbba` | Add cross-turn freshness and override reset |
 | `071cf76` | Add named, reproducible Day 3 ablation configurations |

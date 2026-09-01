@@ -1,6 +1,6 @@
 """Customer-facing explanations for the Kwekers shopping agent.
 
-Member 5 ownership (Day 4): keep this layer presentation-only.  The evaluator
+Day 4: keep this layer presentation-only.  The evaluator
 scores ``ask_attribute`` and recommendations, not the prose in ``message``, so
 this module must never change ranking or session state.
 

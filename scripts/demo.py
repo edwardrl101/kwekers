@@ -14,7 +14,7 @@ released simulator:
     python scripts/demo.py --save-examples
 
 This writes buying, browsing, and intent-override transcripts under
-``demo_transcripts/``.
+``demo/transcripts/``.
 """
 
 from __future__ import annotations
@@ -256,7 +256,7 @@ def main() -> int:
         action="store_true",
         help="write buying/browsing/intent-override transcripts and exit",
     )
-    parser.add_argument("--output-dir", default="demo_transcripts")
+    parser.add_argument("--output-dir", default="demo/transcripts")
     parser.add_argument("--session-id", default="demo")
     args = parser.parse_args()
 

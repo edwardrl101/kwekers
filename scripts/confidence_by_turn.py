@@ -1,4 +1,4 @@
-"""Day 4: confidence-by-turn measurement and demo chart.
+"""Confidence-by-turn measurement and demo chart.
 
 Shows the read-only confidence value (src/confidence.py, wired in as
 Agent._confidence_from_routes when ENABLE_CONFIDENCE is on) across turns of
@@ -210,7 +210,7 @@ def main() -> None:
     parser.add_argument("--catalog", type=Path, default=ROOT / "data/catalog.jsonl")
     parser.add_argument("--dataset", type=Path, default=ROOT / "data/public_set.jsonl")
     parser.add_argument("--output", type=Path, default=ROOT / "results" / "confidence_by_turn.png")
-    parser.add_argument("--json-output", type=Path, default=ROOT / "results" / "day4_confidence_by_turn.json")
+    parser.add_argument("--json-output", type=Path, default=ROOT / "results" / "confidence_by_turn.json")
     args = parser.parse_args()
 
     samples = load_jsonl(args.dataset)

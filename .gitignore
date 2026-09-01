@@ -4,12 +4,6 @@ __pycache__/
 .DS_Store
 .env
 results.json
-scripts/
-!scripts/
-scripts/*
-!scripts/build_cv_folds.py
-!scripts/eval_cv.py
-!scripts/llm_smoke.py
 data/split.json
 results_*.json
 data/catalog.jsonl
@@ -21,11 +15,12 @@ secure/
 # Internal provenance and release-audit working documents.
 docs/audits/
 docs/data_selection_audit.md
+docs/demo-repository-audit.md
 docs/participant_release_checklist.md
 # Organizer-only pipeline tests.
 tests/test_5core_builder.py
 tests/test_organizer_pipeline.py
 *.log
 CLAUDE.md
-data/dense_cache.npz
 catalog.jsonl.gz
+kwekers_writeup.html

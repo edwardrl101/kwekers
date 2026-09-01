@@ -1,2 +1,3 @@
+# Core dependencies for the scored Agent path (deterministic, offline).
 numpy>=2.1,<3
 scikit-learn>=1.7,<2
