@@ -18,8 +18,10 @@ evaluator's _clean_constraint() byte-for-byte instead, which does NOT do NFKC.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
+import tempfile
 import unicodedata
 from pathlib import Path
 from typing import Iterable
@@ -255,7 +257,26 @@ class BM25Route:
     WEIGHTS = (0.0, 10.0, 12.0, 3.0, 3.0, 1.5, 1.0)
 
     def __init__(self, catalog: dict[str, dict]) -> None:
-        self.connection = sqlite3.connect(":memory:", check_same_thread=False)
+        # File-backed rather than :memory: so the FTS5 index lives off the
+        # Python heap (~50k rows otherwise pushes process RSS well past
+        # typical free-tier hosting limits). SQLite reopens the path for
+        # rollback-journal files during writes, so it can't be unlinked
+        # up front like a plain fd trick (that raised "disk I/O error"
+        # here) - instead the temp file is removed in __del__, once the
+        # connection is closed. Same queries, same FTS5 index contents,
+        # same deterministic ORDER BY tie-break as :memory: - storage
+        # backend only, no behavior change.
+        fd, self._db_path = tempfile.mkstemp(suffix=".sqlite3", prefix="bm25-")
+        os.close(fd)
+        self.connection = sqlite3.connect(self._db_path, check_same_thread=False)
+        # This index is rebuilt from scratch every process start and never
+        # read back after a crash, so there is nothing to protect by fsync-ing
+        # the one-time bulk insert below; skipping it removes most of the
+        # disk-vs-:memory: latency gap without reintroducing the RSS cost
+        # (the journal itself stays tiny - only uncommitted-transaction
+        # bookkeeping, not the dataset).
+        self.connection.execute("PRAGMA synchronous = OFF")
+        self.connection.execute("PRAGMA journal_mode = MEMORY")
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -275,6 +296,17 @@ class BM25Route:
         if batch:
             cursor.executemany("INSERT INTO products VALUES (?,?,?,?,?,?,?)", batch)
         self.connection.commit()
+
+    def __del__(self) -> None:
+        connection = getattr(self, "connection", None)
+        if connection is not None:
+            connection.close()
+        path = getattr(self, "_db_path", None)
+        if path is not None:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     def _run(self, expression: str, limit: int) -> list[tuple[str, float]]:
         if not expression:
