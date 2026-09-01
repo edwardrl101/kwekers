@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: kwekers-demo
+    runtime: python
+    plan: free
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      curl -fsSL -o data/catalog.jsonl.gz
+        https://github.com/edwardrl101/kwekers/releases/download/v1.0-final/catalog.jsonl.gz &&
+      gunzip -f data/catalog.jsonl.gz
+    startCommand: python3 demo_server.py
+    healthCheckPath: /api/config
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PYTHON_VERSION
+        value: 3.11.9
